@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import colorsys
 import datetime
 import email.utils
 import hashlib
 import html
 import json
+import math
 import mimetypes
 import pathlib
 import random
@@ -27,9 +29,9 @@ from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, StarTools, register
 
 # 直接内嵌最新 HTML 模板，确保在 AstrBot 热重载 main.py 时不会因 sys.modules 缓存旧的 templates.py 而导致样式不更新
-TWEET_CARD_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #0f172a;\n  }\n  .card {\n    width: 100%;\n    background: #ffffff;\n    padding: 28px 32px;\n  }\n  .header {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    margin-bottom: 16px;\n  }\n  .author-box {\n    display: flex;\n    align-items: center;\n    gap: 14px;\n  }\n  .avatar {\n    width: 52px;\n    height: 52px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 22px;\n    font-weight: 700;\n    overflow: hidden;\n    flex-shrink: 0;\n    border: 1px solid #e2e8f0;\n  }\n  .avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n  }\n  .author-meta {\n    display: flex;\n    flex-direction: column;\n    gap: 3px;\n  }\n  .author-name-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n  }\n  .author-name {\n    font-size: 19px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .verified-badge {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 18px;\n    height: 18px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 11px;\n    font-weight: 900;\n  }\n  .author-sub {\n    font-size: 14px;\n    color: #64748b;\n    font-weight: 500;\n  }\n  .brand-logo {\n    width: 34px;\n    height: 34px;\n    border-radius: 9px;\n    background: #0f172a;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 19px;\n    font-weight: 900;\n  }\n  .tweet-section {\n    margin-bottom: 12px;\n  }\n  .tweet-body {\n    font-size: 18px;\n    line-height: 1.65;\n    color: #0f172a;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .tweet-tags {\n    margin-top: 4px;\n    font-size: 17px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .trans-section {\n    margin-top: 8px;\n    margin-bottom: 14px;\n    padding-top: 10px;\n    border-top: 1px solid #f1f5f9;\n  }\n  .trans-body {\n    font-size: 16.5px;\n    line-height: 1.65;\n    color: #334155;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .trans-tags {\n    margin-top: 4px;\n    font-size: 16.5px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .media-grid {\n    display: grid;\n    gap: 10px;\n    margin-top: 12px;\n    border-radius: 16px;\n    overflow: hidden;\n  }\n  .media-grid.count-1 {\n    grid-template-columns: 1fr;\n  }\n  .media-grid.count-2, .media-grid.count-3, .media-grid.count-4 {\n    grid-template-columns: 1fr 1fr;\n  }\n  .media-item {\n    width: 100%;\n    overflow: hidden;\n    background: #f8fafc;\n    border-radius: 14px;\n    border: 1px solid #e2e8f0;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .media-grid.count-1 .media-item img {\n    width: 100%;\n    height: auto;\n    display: block;\n  }\n  .media-grid.count-2 .media-item img,\n  .media-grid.count-3 .media-item img,\n  .media-grid.count-4 .media-item img {\n    width: 100%;\n    height: 320px;\n    object-fit: cover;\n    display: block;\n  }\n</style>\n</head>\n<body>\n  <div class="card" id="tweet-card">\n    <div class="header">\n      <div class="author-box">\n        <div class="avatar">\n          {% if avatar_src %}\n          <img src="{{ avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ author_initial }}\';" />\n          {% else %}\n          {{ author_initial }}\n          {% endif %}\n        </div>\n        <div class="author-meta">\n          <div class="author-name-row">\n            <span class="author-name">{{ author_name }}</span>\n            <span class="verified-badge">✓</span>\n          </div>\n          <span class="author-sub">@{{ username }}{% if pub_date %} · {{ pub_date }}{% endif %}</span>\n        </div>\n      </div>\n      <div class="brand-logo">𝕏</div>\n    </div>\n\n    {% if orig_body or orig_tags %}\n    <div class="tweet-section">\n      {% if orig_body %}\n      <div class="tweet-body">{{ orig_body }}</div>\n      {% endif %}\n      {% if orig_tags %}\n      <div class="tweet-tags">{{ orig_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if translated_body or translated_tags %}\n    <div class="trans-section">\n      {% if orig_body and translated_body %}\n      <div class="trans-body">{{ translated_body }}</div>\n      {% endif %}\n      {% if translated_tags %}\n      <div class="trans-tags">{{ translated_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if display_images %}\n    <div class="media-grid count-{{ display_images|length if display_images|length <= 4 else 4 }}">\n      {% for img_src in display_images[:4] %}\n      <div class="media-item">\n        <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </div>\n      {% endfor %}\n    </div>\n    {% endif %}\n  </div>\n</body>\n</html>\n'
+TWEET_CARD_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #0f172a;\n    -webkit-font-smoothing: antialiased;\n  }\n  .card {\n    width: 100%;\n    background: #ffffff;\n    padding: 28px 32px;\n  }\n  .retweet-banner {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    margin-bottom: 12px;\n    padding-left: 8px;\n    font-size: 13.5px;\n    font-weight: 700;\n    color: #059669;\n  }\n  .retweet-icon {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 20px;\n    height: 20px;\n    border-radius: 6px;\n    background: rgba(16, 185, 129, 0.12);\n    color: #059669;\n    font-size: 13px;\n    font-weight: 900;\n  }\n  .retweet-mini-avatar {\n    width: 20px;\n    height: 20px;\n    border-radius: 50%;\n    overflow: hidden;\n    background: #10b981;\n    flex-shrink: 0;\n    border: 1px solid #d1fae5;\n  }\n  .retweet-mini-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .header {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    margin-bottom: 16px;\n  }\n  .author-box {\n    display: flex;\n    align-items: center;\n    gap: 14px;\n  }\n  .avatar {\n    width: 52px;\n    height: 52px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 22px;\n    font-weight: 700;\n    overflow: hidden;\n    flex-shrink: 0;\n    border: 1px solid #e2e8f0;\n  }\n  .avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n  }\n  .author-meta {\n    display: flex;\n    flex-direction: column;\n    gap: 3px;\n  }\n  .author-name-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n  }\n  .author-name {\n    font-size: 19px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .verified-badge {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 18px;\n    height: 18px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 11px;\n    font-weight: 900;\n  }\n  .author-sub {\n    font-size: 14px;\n    color: #64748b;\n    font-weight: 500;\n  }\n  .brand-logo {\n    width: 34px;\n    height: 34px;\n    border-radius: 9px;\n    background: #0f172a;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 19px;\n    font-weight: 900;\n  }\n  .tweet-section {\n    margin-bottom: 12px;\n  }\n  .tweet-body {\n    font-size: 18px;\n    line-height: 1.65;\n    color: #0f172a;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .tweet-tags {\n    margin-top: 4px;\n    font-size: 17px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .trans-section {\n    margin-top: 8px;\n    margin-bottom: 14px;\n    padding-top: 10px;\n    border-top: 1px solid #f1f5f9;\n  }\n  .trans-body {\n    font-size: 16.5px;\n    line-height: 1.65;\n    color: #334155;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .trans-tags {\n    margin-top: 4px;\n    font-size: 16.5px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .media-grid {\n    display: grid;\n    gap: 10px;\n    margin-top: 12px;\n    border-radius: 16px;\n    overflow: hidden;\n  }\n  .media-grid.count-1 {\n    grid-template-columns: 1fr;\n  }\n  .media-grid.count-2, .media-grid.count-3, .media-grid.count-4 {\n    grid-template-columns: 1fr 1fr;\n  }\n  .media-item {\n    width: 100%;\n    overflow: hidden;\n    background: #f8fafc;\n    border-radius: 14px;\n    border: 1px solid #e2e8f0;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .media-grid.count-1 .media-item img {\n    width: 100%;\n    height: auto;\n    display: block;\n  }\n  .media-grid.count-2 .media-item img,\n  .media-grid.count-3 .media-item img,\n  .media-grid.count-4 .media-item img {\n    width: 100%;\n    height: 320px;\n    object-fit: cover;\n    display: block;\n  }\n  /* 引用转发 (Quote Tweet) 嵌套卡片样式 */\n  .quote-card {\n    margin-top: 14px;\n    border: 1.5px solid #cbd5e1;\n    border-radius: 16px;\n    background: #f8fafc;\n    padding: 16px 18px;\n    overflow: hidden;\n  }\n  .quote-header {\n    display: flex;\n    align-items: center;\n    gap: 9px;\n    margin-bottom: 8px;\n  }\n  .quote-avatar {\n    width: 26px;\n    height: 26px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 13px;\n    font-weight: 700;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    overflow: hidden;\n    flex-shrink: 0;\n  }\n  .quote-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .quote-author-name {\n    font-size: 15px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .quote-author-handle {\n    font-size: 13.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .quote-body {\n    font-size: 15.5px;\n    line-height: 1.58;\n    color: #1e293b;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .quote-tags {\n    margin-top: 4px;\n    font-size: 15px;\n    line-height: 1.55;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n</style>\n</head>\n<body>\n  <div class="card" id="tweet-card">\n    {% if is_retweet and retweeter_username %}\n    <div class="retweet-banner">\n      <span class="retweet-icon">↻</span>\n      {% if retweeter_avatar_src %}\n      <span class="retweet-mini-avatar">\n        <img src="{{ retweeter_avatar_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </span>\n      {% endif %}\n      <span>{{ retweeter_name }} (@{{ retweeter_username }}) 已转推</span>\n    </div>\n    {% endif %}\n\n    <div class="header">\n      <div class="author-box">\n        <div class="avatar">\n          {% if avatar_src %}\n          <img src="{{ avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ author_initial }}\';" />\n          {% else %}\n          {{ author_initial }}\n          {% endif %}\n        </div>\n        <div class="author-meta">\n          <div class="author-name-row">\n            <span class="author-name">{{ author_name }}</span>\n            <span class="verified-badge">✓</span>\n          </div>\n          <span class="author-sub">@{{ username }}{% if pub_date %} · {{ pub_date }}{% endif %}</span>\n        </div>\n      </div>\n      <div class="brand-logo">𝕏</div>\n    </div>\n\n    {% if orig_body or orig_tags %}\n    <div class="tweet-section">\n      {% if orig_body %}\n      <div class="tweet-body">{{ orig_body }}</div>\n      {% endif %}\n      {% if orig_tags %}\n      <div class="tweet-tags">{{ orig_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if translated_body or translated_tags %}\n    <div class="trans-section">\n      {% if orig_body and translated_body %}\n      <div class="trans-body">{{ translated_body }}</div>\n      {% endif %}\n      {% if translated_tags %}\n      <div class="trans-tags">{{ translated_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if quote_info %}\n    <div class="quote-card">\n      <div class="quote-header">\n        <div class="quote-avatar">\n          {% if quote_info.avatar_src %}\n          <img src="{{ quote_info.avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ quote_info.author_initial }}\';" />\n          {% else %}\n          {{ quote_info.author_initial }}\n          {% endif %}\n        </div>\n        <span class="quote-author-name">{{ quote_info.author_name }}</span>\n        <span class="quote-author-handle">@{{ quote_info.username }}</span>\n      </div>\n      {% if quote_info.orig_body %}\n      <div class="quote-body">{{ quote_info.orig_body }}</div>\n      {% endif %}\n      {% if quote_info.orig_tags %}\n      <div class="quote-tags">{{ quote_info.orig_tags|join(\' \') }}</div>\n      {% endif %}\n      {% if quote_info.display_images %}\n      <div class="media-grid count-{{ quote_info.display_images|length if quote_info.display_images|length <= 4 else 4 }}">\n        {% for img_src in quote_info.display_images[:4] %}\n        <div class="media-item">\n          <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% endfor %}\n      </div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if display_images %}\n    <div class="media-grid count-{{ display_images|length if display_images|length <= 4 else 4 }}">\n      {% for img_src in display_images[:4] %}\n      <div class="media-item">\n        <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </div>\n      {% endfor %}\n    </div>\n    {% endif %}\n  </div>\n</body>\n</html>\n'
 
-DAILY_DIGEST_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #181e29;\n    -webkit-font-smoothing: antialiased;\n  }\n  .digest-page {\n    width: 100%;\n    background: linear-gradient(\n      160deg,\n      rgba(var(--theme-rgb, 245, 242, 255), 0.65) 0%,\n      #ffffff 42%,\n      rgba(var(--theme-soft-rgb, 239, 247, 255), 0.55) 100%\n    );\n    padding: 34px 36px 38px 36px;\n    position: relative;\n    overflow: hidden;\n  }\n  .page-deco-circle {\n    position: absolute;\n    top: -90px;\n    right: -70px;\n    width: 260px;\n    height: 260px;\n    border-radius: 50%;\n    background: radial-gradient(\n      circle,\n      rgba(var(--theme-accent-rgb, 124, 58, 237), 0.10) 0%,\n      rgba(var(--theme-accent-rgb, 124, 58, 237), 0) 70%\n    );\n    pointer-events: none;\n    z-index: 0;\n  }\n  .digest-header {\n    position: relative;\n    z-index: 2;\n    display: flex;\n    align-items: flex-end;\n    justify-content: space-between;\n    gap: 20px;\n  }\n  .header-left {\n    display: flex;\n    align-items: center;\n    gap: 16px;\n  }\n  .header-accent-bar {\n    width: 8px;\n    height: 46px;\n    border-radius: 99px;\n    background: var(--theme-accent, #7c3aed);\n    box-shadow: 0 4px 14px rgba(var(--theme-accent-rgb, 124, 58, 237), 0.30);\n    flex-shrink: 0;\n  }\n  .header-title-wrap {\n    display: flex;\n    flex-direction: column;\n    gap: 4px;\n  }\n  .header-title {\n    font-size: 32px;\n    font-weight: 900;\n    color: #141923;\n    letter-spacing: 1.5px;\n    line-height: 1.1;\n  }\n  .header-sub {\n    font-size: 11px;\n    font-weight: 800;\n    letter-spacing: 2.4px;\n    text-transform: uppercase;\n    color: var(--theme-accent, #7c3aed);\n    opacity: 0.88;\n  }\n  .header-right {\n    display: flex;\n    flex-direction: column;\n    align-items: flex-end;\n    gap: 7px;\n  }\n  .date-badge {\n    background: rgba(var(--theme-rgb, 245, 242, 255), 0.95);\n    color: var(--theme-accent, #7c3aed);\n    border: 1px solid var(--theme-border, #ddd6fe);\n    padding: 5px 14px;\n    border-radius: 99px;\n    font-size: 12.5px;\n    font-weight: 800;\n    letter-spacing: 0.8px;\n  }\n  .stats-row {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    font-size: 12px;\n    font-weight: 600;\n    color: #64748b;\n  }\n  .stats-row strong {\n    color: #1e293b;\n    font-weight: 800;\n  }\n  .stats-dot {\n    width: 4px;\n    height: 4px;\n    border-radius: 50%;\n    background: var(--theme-accent, #7c3aed);\n    opacity: 0.45;\n  }\n  .header-divider {\n    position: relative;\n    z-index: 2;\n    height: 2px;\n    margin: 20px 0 24px 0;\n    border-radius: 99px;\n    background: linear-gradient(\n      90deg,\n      var(--theme-accent, #7c3aed) 0%,\n      var(--theme-border, #ddd6fe) 38%,\n      rgba(226, 232, 240, 0.35) 100%\n    );\n  }\n  .digest-list {\n    position: relative;\n    z-index: 2;\n    display: flex;\n    flex-direction: column;\n    gap: 18px;\n  }\n  .news-card {\n    position: relative;\n    width: 100%;\n    border-radius: 22px;\n    overflow: hidden;\n    background: linear-gradient(\n      135deg,\n      rgb(var(--card-rgb)) 0%,\n      rgb(var(--card-soft-rgb)) 100%\n    );\n    border: 1.5px solid var(--card-border);\n    box-shadow:\n      0 10px 26px -10px rgba(var(--accent-rgb), 0.14),\n      inset 0 1px 0 rgba(255, 255, 255, 0.88);\n    display: flex;\n    align-items: stretch;\n  }\n  .news-card.has-image {\n    min-height: 178px;\n  }\n  .news-card.no-image {\n    min-height: 136px;\n  }\n  .card-accent-strip {\n    width: 6px;\n    background: var(--accent);\n    flex-shrink: 0;\n    z-index: 3;\n  }\n  .card-body {\n    position: relative;\n    z-index: 3;\n    display: flex;\n    flex-direction: column;\n    justify-content: center;\n  }\n  .news-card.has-image .card-body {\n    width: 64%;\n    padding: 22px 18px 22px 22px;\n  }\n  .news-card.no-image .card-body {\n    width: 100%;\n    padding: 22px 28px 22px 22px;\n  }\n  .card-meta {\n    display: flex;\n    align-items: center;\n    flex-wrap: wrap;\n    gap: 8px;\n    margin-bottom: 9px;\n  }\n  .card-num {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    height: 22px;\n    padding: 0 9px;\n    border-radius: 99px;\n    background: var(--accent);\n    color: #ffffff;\n    font-size: 11.5px;\n    font-weight: 800;\n    letter-spacing: 0.6px;\n    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.25);\n  }\n  .card-cat {\n    display: inline-flex;\n    align-items: center;\n    height: 22px;\n    padding: 0 10px;\n    border-radius: 99px;\n    background: var(--tag-bg);\n    color: var(--accent);\n    border: 1px solid rgba(var(--accent-rgb), 0.22);\n    font-size: 11.5px;\n    font-weight: 700;\n    letter-spacing: 0.3px;\n  }\n  .card-author {\n    font-size: 12.5px;\n    font-weight: 700;\n    color: #334155;\n  }\n  .card-time {\n    font-size: 11.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .card-title {\n    font-size: 19px;\n    font-weight: 850;\n    color: #141923;\n    line-height: 1.38;\n    margin-bottom: 7px;\n    letter-spacing: 0.2px;\n    text-shadow: 0 1px 10px rgba(var(--card-rgb), 0.95);\n  }\n  .card-summary {\n    font-size: 14.5px;\n    font-weight: 500;\n    color: #334155;\n    line-height: 1.66;\n    word-break: break-word;\n    text-shadow: 0 1px 8px rgba(var(--card-rgb), 0.95);\n  }\n  .card-artwork {\n    position: absolute;\n    top: 0;\n    right: 0;\n    bottom: 0;\n    width: 58%;\n    z-index: 1;\n    overflow: hidden;\n  }\n  .card-artwork img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    object-position: center 20%;\n    display: block;\n  }\n  .card-artwork-fade {\n    position: absolute;\n    inset: 0;\n    z-index: 2;\n    background:\n      linear-gradient(\n        90deg,\n        rgba(var(--card-rgb), 1) 0%,\n        rgba(var(--card-rgb), 0.99) 14%,\n        rgba(var(--card-rgb), 0.92) 28%,\n        rgba(var(--card-rgb), 0.68) 46%,\n        rgba(var(--card-rgb), 0.26) 68%,\n        rgba(var(--card-rgb), 0.04) 86%,\n        rgba(var(--card-rgb), 0) 100%\n      ),\n      linear-gradient(\n        180deg,\n        rgba(var(--card-rgb), 0.14) 0%,\n        rgba(var(--card-rgb), 0) 22%,\n        rgba(var(--card-rgb), 0) 78%,\n        rgba(var(--card-rgb), 0.18) 100%\n      );\n  }\n  .card-watermark-num {\n    position: absolute;\n    right: 22px;\n    bottom: -10px;\n    font-size: 76px;\n    font-weight: 900;\n    line-height: 1;\n    letter-spacing: -2px;\n    color: rgba(var(--accent-rgb), 0.07);\n    pointer-events: none;\n    z-index: 1;\n    user-select: none;\n  }\n</style>\n</head>\n<body>\n  <div\n    class="digest-page"\n    style="\n      --theme-rgb: {{ theme.card_rgb }};\n      --theme-soft-rgb: {{ theme.card_soft_rgb }};\n      --theme-border: {{ theme.card_border }};\n      --theme-accent: {{ theme.accent }};\n      --theme-accent-rgb: {{ theme.accent_rgb }};\n    "\n  >\n    <div class="page-deco-circle"></div>\n\n    <div class="digest-header">\n      <div class="header-left">\n        <div class="header-accent-bar"></div>\n        <div class="header-title-wrap">\n          <div class="header-title">今日要闻</div>\n          <div class="header-sub">DAILY CURATED BRIEFING</div>\n        </div>\n      </div>\n\n      <div class="header-right">\n        <div class="date-badge">{{ date_str }}</div>\n        <div class="stats-row">\n          <span>24H 收录 <strong>{{ total_count }}</strong></span>\n          <span class="stats-dot"></span>\n          <span>精选 <strong>{{ items|length }}</strong></span>\n          <span class="stats-dot"></span>\n          <span>订阅 <strong>{{ account_count }}</strong></span>\n        </div>\n      </div>\n    </div>\n\n    <div class="header-divider"></div>\n\n    <div class="digest-list">\n      {% for item in items %}\n      <div\n        class="news-card {% if item.thumb_src %}has-image{% else %}no-image{% endif %}"\n        style="\n          --card-rgb: {{ item.palette.card_rgb }};\n          --card-soft-rgb: {{ item.palette.card_soft_rgb }};\n          --card-border: {{ item.palette.card_border }};\n          --accent: {{ item.palette.accent }};\n          --accent-rgb: {{ item.palette.accent_rgb }};\n          --tag-bg: {{ item.palette.tag_bg }};\n        "\n      >\n        <div class="card-accent-strip"></div>\n\n        <div class="card-body">\n          <div class="card-meta">\n            <span class="card-num">{{ "%02d"|format(loop.index) }}</span>\n            <span class="card-cat">{{ item.category or "资讯速递" }}</span>\n            <span class="card-author">@{{ item.username }}{% if item.author_name and item.author_name != item.username %} · {{ item.author_name }}{% endif %}</span>\n            {% if item.pub_date %}\n            <span class="card-time">{{ item.pub_date }}</span>\n            {% endif %}\n          </div>\n          <div class="card-title">{{ item.title }}</div>\n          <div class="card-summary">{{ item.summary }}</div>\n        </div>\n\n        {% if item.thumb_src %}\n        <div class="card-artwork">\n          <img src="{{ item.thumb_src }}" onerror="this.parentNode.style.display=\'none\';" />\n          <div class="card-artwork-fade"></div>\n        </div>\n        {% else %}\n        <div class="card-watermark-num">{{ "%02d"|format(loop.index) }}</div>\n        {% endif %}\n      </div>\n      {% endfor %}\n    </div>\n  </div>\n</body>\n</html>\n'
+DAILY_DIGEST_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #181e29;\n    -webkit-font-smoothing: antialiased;\n  }\n  .digest-page {\n    width: 100%;\n    background: linear-gradient(\n      180deg,\n      rgba(var(--theme-rgb, 254, 228, 238), 0.62) 0%,\n      rgba(var(--theme-mid-rgb, 255, 255, 255), 0.28) 50%,\n      rgba(var(--theme-end-rgb, 235, 228, 255), 0.58) 100%\n    );\n    padding: 34px 36px 38px 36px;\n    position: relative;\n    overflow: hidden;\n  }\n  .page-deco-circle {\n    position: absolute;\n    top: -90px;\n    right: -70px;\n    width: 260px;\n    height: 260px;\n    border-radius: 50%;\n    background: radial-gradient(\n      circle,\n      rgba(var(--theme-accent-rgb, 112, 72, 232), 0.10) 0%,\n      rgba(var(--theme-accent-rgb, 112, 72, 232), 0) 70%\n    );\n    pointer-events: none;\n    z-index: 0;\n  }\n  .digest-header {\n    position: relative;\n    z-index: 2;\n    display: flex;\n    align-items: flex-end;\n    justify-content: space-between;\n    gap: 20px;\n  }\n  .header-left {\n    display: flex;\n    align-items: center;\n    gap: 16px;\n  }\n  .header-accent-bar {\n    width: 8px;\n    height: 46px;\n    border-radius: 99px;\n    background: linear-gradient(\n      180deg,\n      var(--theme-accent, #d6336c) 0%,\n      var(--theme-mid-accent, var(--theme-accent, #d6336c)) 100%\n    );\n    box-shadow: 0 4px 14px rgba(var(--theme-accent-rgb, 214, 51, 108), 0.30);\n    flex-shrink: 0;\n  }\n  .header-title-wrap {\n    display: flex;\n    flex-direction: column;\n    gap: 4px;\n  }\n  .header-title {\n    font-size: 32px;\n    font-weight: 900;\n    color: #141923;\n    letter-spacing: 1.5px;\n    line-height: 1.1;\n  }\n  .header-sub {\n    font-size: 11px;\n    font-weight: 800;\n    letter-spacing: 2.4px;\n    text-transform: uppercase;\n    color: var(--theme-accent, #7048e8);\n    opacity: 0.88;\n  }\n  .header-right {\n    display: flex;\n    flex-direction: column;\n    align-items: flex-end;\n    gap: 7px;\n  }\n  .date-badge {\n    background: rgba(var(--theme-rgb, 236, 229, 255), 0.95);\n    color: var(--theme-accent, #7048e8);\n    border: 1px solid var(--theme-border, #d0bfff);\n    padding: 5px 14px;\n    border-radius: 99px;\n    font-size: 12.5px;\n    font-weight: 800;\n    letter-spacing: 0.8px;\n  }\n  .stats-row {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    font-size: 12px;\n    font-weight: 600;\n    color: #64748b;\n  }\n  .stats-row strong {\n    color: #1e293b;\n    font-weight: 800;\n  }\n  .stats-dot {\n    width: 4px;\n    height: 4px;\n    border-radius: 50%;\n    background: var(--theme-accent, #7048e8);\n    opacity: 0.45;\n  }\n  .header-divider {\n    position: relative;\n    z-index: 2;\n    height: 2.5px;\n    margin: 20px 0 24px 0;\n    border-radius: 99px;\n    background: linear-gradient(\n      90deg,\n      var(--theme-accent, #d6336c) 0%,\n      var(--theme-mid-accent, var(--theme-border, #f9b8d4)) 45%,\n      rgba(var(--theme-end-accent-rgb, var(--theme-accent-rgb, 214, 51, 108)), 0.22) 100%\n    );\n  }\n  .digest-list {\n    position: relative;\n    z-index: 2;\n    display: flex;\n    flex-direction: column;\n    gap: 18px;\n  }\n  .news-card {\n    position: relative;\n    width: 100%;\n    border-radius: 22px;\n    overflow: hidden;\n    background: linear-gradient(\n      90deg,\n      rgb(var(--card-rgb)) 0%,\n      rgb(var(--card-soft-rgb)) 100%\n    );\n    border: 1.5px solid var(--card-border);\n    box-shadow:\n      0 10px 26px -10px rgba(var(--accent-rgb), 0.15),\n      inset 0 1px 0 rgba(255, 255, 255, 0.75);\n    display: flex;\n    align-items: stretch;\n  }\n  .news-card.has-image {\n    min-height: 178px;\n  }\n  .news-card.no-image {\n    min-height: 136px;\n  }\n  .card-accent-strip {\n    width: 6px;\n    background: var(--accent);\n    flex-shrink: 0;\n    z-index: 3;\n  }\n  .card-body {\n    position: relative;\n    z-index: 3;\n    display: flex;\n    flex-direction: column;\n    justify-content: center;\n  }\n  .news-card.has-image .card-body {\n    width: 64%;\n    padding: 22px 18px 22px 22px;\n  }\n  .news-card.no-image .card-body {\n    width: 100%;\n    padding: 22px 28px 22px 22px;\n  }\n  .card-meta {\n    display: flex;\n    align-items: center;\n    flex-wrap: wrap;\n    gap: 8px;\n    margin-bottom: 9px;\n  }\n  .card-num {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    height: 22px;\n    padding: 0 9px;\n    border-radius: 99px;\n    background: var(--accent);\n    color: #ffffff;\n    font-size: 11.5px;\n    font-weight: 800;\n    letter-spacing: 0.6px;\n    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.25);\n  }\n  .card-cat {\n    display: inline-flex;\n    align-items: center;\n    height: 22px;\n    padding: 0 10px;\n    border-radius: 99px;\n    background: var(--tag-bg);\n    color: var(--accent);\n    border: 1px solid rgba(var(--accent-rgb), 0.24);\n    font-size: 11.5px;\n    font-weight: 700;\n    letter-spacing: 0.3px;\n  }\n  .card-author {\n    font-size: 12.5px;\n    font-weight: 700;\n    color: #334155;\n  }\n  .card-time {\n    font-size: 11.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .card-title {\n    font-size: 19px;\n    font-weight: 850;\n    color: #141923;\n    line-height: 1.38;\n    margin-bottom: 7px;\n    letter-spacing: 0.2px;\n  }\n  .card-summary {\n    font-size: 14.5px;\n    font-weight: 500;\n    color: #2d3748;\n    line-height: 1.66;\n    word-break: break-word;\n  }\n  /* 使用 CSS mask-image 控制图片自身的 Alpha 透明度，从右向左逐渐透明融入卡片马卡龙底色，绝不发白、绝无接缝 */\n  .card-artwork {\n    position: absolute;\n    top: 0;\n    right: 0;\n    bottom: 0;\n    width: 58%;\n    z-index: 1;\n    overflow: hidden;\n    -webkit-mask-image: linear-gradient(\n      90deg,\n      rgba(0, 0, 0, 0) 0%,\n      rgba(0, 0, 0, 0.04) 12%,\n      rgba(0, 0, 0, 0.18) 28%,\n      rgba(0, 0, 0, 0.48) 48%,\n      rgba(0, 0, 0, 0.80) 68%,\n      rgba(0, 0, 0, 0.96) 85%,\n      rgba(0, 0, 0, 1) 100%\n    );\n    mask-image: linear-gradient(\n      90deg,\n      rgba(0, 0, 0, 0) 0%,\n      rgba(0, 0, 0, 0.04) 12%,\n      rgba(0, 0, 0, 0.18) 28%,\n      rgba(0, 0, 0, 0.48) 48%,\n      rgba(0, 0, 0, 0.80) 68%,\n      rgba(0, 0, 0, 0.96) 85%,\n      rgba(0, 0, 0, 1) 100%\n    );\n  }\n  .card-artwork img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    object-position: center 20%;\n    display: block;\n  }\n  .card-watermark-num {\n    position: absolute;\n    right: 22px;\n    bottom: -10px;\n    font-size: 76px;\n    font-weight: 900;\n    line-height: 1;\n    letter-spacing: -2px;\n    color: rgba(var(--accent-rgb), 0.08);\n    pointer-events: none;\n    z-index: 1;\n    user-select: none;\n  }\n</style>\n</head>\n<body>\n  <div\n    class="digest-page"\n    style="\n      --theme-rgb: {{ theme.card_rgb }};\n      --theme-soft-rgb: {{ theme.card_soft_rgb }};\n      --theme-border: {{ theme.card_border }};\n      --theme-accent: {{ theme.accent }};\n      --theme-accent-rgb: {{ theme.accent_rgb }};\n      --theme-mid-rgb: {{ (theme_mid or theme).card_rgb }};\n      --theme-mid-accent: {{ (theme_mid or theme).accent }};\n      --theme-end-rgb: {{ (theme_end or theme).card_soft_rgb }};\n      --theme-end-accent-rgb: {{ (theme_end or theme).accent_rgb }};\n    "\n  >\n    <div class="page-deco-circle"></div>\n\n    <div class="digest-header">\n      <div class="header-left">\n        <div class="header-accent-bar"></div>\n        <div class="header-title-wrap">\n          <div class="header-title">今日要闻</div>\n          <div class="header-sub">DAILY CURATED BRIEFING</div>\n        </div>\n      </div>\n\n      <div class="header-right">\n        <div class="date-badge">{{ date_str }}</div>\n        <div class="stats-row">\n          <span>24H 收录 <strong>{{ total_count }}</strong></span>\n          <span class="stats-dot"></span>\n          <span>精选 <strong>{{ items|length }}</strong></span>\n          <span class="stats-dot"></span>\n          <span>订阅 <strong>{{ account_count }}</strong></span>\n        </div>\n      </div>\n    </div>\n\n    <div class="header-divider"></div>\n\n    <div class="digest-list">\n      {% for item in items %}\n      <div\n        class="news-card {% if item.thumb_src %}has-image{% else %}no-image{% endif %}"\n        style="\n          --card-rgb: {{ item.palette.card_rgb }};\n          --card-soft-rgb: {{ item.palette.card_soft_rgb }};\n          --card-border: {{ item.palette.card_border }};\n          --accent: {{ item.palette.accent }};\n          --accent-rgb: {{ item.palette.accent_rgb }};\n          --tag-bg: {{ item.palette.tag_bg }};\n        "\n      >\n        <div class="card-accent-strip"></div>\n\n        <div class="card-body">\n          <div class="card-meta">\n            <span class="card-num">{{ "%02d"|format(loop.index) }}</span>\n            <span class="card-cat">{{ item.category or "资讯速递" }}</span>\n            <span class="card-author">@{{ item.username }}{% if item.author_name and item.author_name != item.username %} · {{ item.author_name }}{% endif %}</span>\n            {% if item.pub_date %}\n            <span class="card-time">{{ item.pub_date }}</span>\n            {% endif %}\n          </div>\n          <div class="card-title">{{ item.title }}</div>\n          <div class="card-summary">{{ item.summary }}</div>\n        </div>\n\n        {% if item.thumb_src %}\n        <div class="card-artwork">\n          <img src="{{ item.thumb_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% else %}\n        <div class="card-watermark-num">{{ "%02d"|format(loop.index) }}</div>\n        {% endif %}\n      </div>\n      {% endfor %}\n    </div>\n  </div>\n</body>\n</html>\n'
 
 
 # 内置多源回退路由列表
@@ -47,75 +49,75 @@ FALLBACK_SOURCE_TEMPLATES = [
 MACARON_PALETTES: list[dict[str, str]] = [
     {
         "name": "sakura_blush",
-        "card_rgb": "255, 241, 246",
-        "card_soft_rgb": "254, 226, 236",
-        "card_border": "#F9C6DC",
+        "card_rgb": "254, 228, 238",
+        "card_soft_rgb": "252, 216, 230",
+        "card_border": "#F9B8D4",
         "accent": "#D6336C",
         "accent_rgb": "214, 51, 108",
-        "tag_bg": "rgba(214, 51, 108, 0.10)",
+        "tag_bg": "rgba(214, 51, 108, 0.12)",
     },
     {
         "name": "mint_seafoam",
-        "card_rgb": "237, 251, 246",
-        "card_soft_rgb": "214, 245, 234",
-        "card_border": "#A7F3D0",
+        "card_rgb": "220, 246, 236",
+        "card_soft_rgb": "204, 240, 226",
+        "card_border": "#8CE9C6",
         "accent": "#0D9488",
         "accent_rgb": "13, 148, 136",
-        "tag_bg": "rgba(13, 148, 136, 0.10)",
+        "tag_bg": "rgba(13, 148, 136, 0.12)",
     },
     {
         "name": "apricot_cream",
-        "card_rgb": "255, 246, 236",
-        "card_soft_rgb": "254, 230, 206",
-        "card_border": "#FED7AA",
+        "card_rgb": "254, 233, 212",
+        "card_soft_rgb": "253, 222, 192",
+        "card_border": "#FDBA8C",
         "accent": "#DD5B19",
         "accent_rgb": "221, 91, 25",
-        "tag_bg": "rgba(221, 91, 25, 0.10)",
+        "tag_bg": "rgba(221, 91, 25, 0.12)",
     },
     {
         "name": "taro_lavender",
-        "card_rgb": "245, 242, 255",
-        "card_soft_rgb": "232, 224, 255",
-        "card_border": "#DDD6FE",
+        "card_rgb": "235, 228, 255",
+        "card_soft_rgb": "224, 214, 254",
+        "card_border": "#C4B5FD",
         "accent": "#7048E8",
         "accent_rgb": "112, 72, 232",
-        "tag_bg": "rgba(112, 72, 232, 0.10)",
+        "tag_bg": "rgba(112, 72, 232, 0.12)",
     },
     {
         "name": "soda_sky",
-        "card_rgb": "239, 247, 255",
-        "card_soft_rgb": "218, 236, 255",
-        "card_border": "#BAE6FD",
+        "card_rgb": "222, 239, 255",
+        "card_soft_rgb": "208, 231, 254",
+        "card_border": "#93C5FD",
         "accent": "#0284C7",
         "accent_rgb": "2, 132, 199",
-        "tag_bg": "rgba(2, 132, 199, 0.10)",
+        "tag_bg": "rgba(2, 132, 199, 0.12)",
     },
     {
         "name": "lemon_butter",
-        "card_rgb": "254, 250, 232",
-        "card_soft_rgb": "253, 239, 194",
-        "card_border": "#FDE68A",
-        "accent": "#C27803",
-        "accent_rgb": "194, 120, 3",
-        "tag_bg": "rgba(194, 120, 3, 0.11)",
+        "card_rgb": "254, 242, 200",
+        "card_soft_rgb": "253, 234, 178",
+        "card_border": "#FCD34D",
+        "accent": "#B45309",
+        "accent_rgb": "180, 83, 9",
+        "tag_bg": "rgba(180, 83, 9, 0.12)",
     },
     {
         "name": "matcha_pistachio",
-        "card_rgb": "241, 250, 240",
-        "card_soft_rgb": "220, 243, 218",
-        "card_border": "#BBF7D0",
+        "card_rgb": "224, 244, 222",
+        "card_soft_rgb": "210, 238, 207",
+        "card_border": "#86EFAC",
         "accent": "#15803D",
         "accent_rgb": "21, 128, 61",
-        "tag_bg": "rgba(21, 128, 61, 0.10)",
+        "tag_bg": "rgba(21, 128, 61, 0.12)",
     },
     {
         "name": "berry_coral",
-        "card_rgb": "255, 241, 242",
-        "card_soft_rgb": "254, 222, 226",
-        "card_border": "#FECDD3",
+        "card_rgb": "254, 226, 230",
+        "card_soft_rgb": "253, 212, 218",
+        "card_border": "#FDA4AF",
         "accent": "#E11D48",
         "accent_rgb": "225, 29, 72",
-        "tag_bg": "rgba(225, 29, 72, 0.10)",
+        "tag_bg": "rgba(225, 29, 72, 0.12)",
     },
 ]
 
@@ -158,6 +160,197 @@ _FORBIDDEN_META_KEYWORDS = (
     "无法核实",
     "无法确认",
 )
+
+
+
+def _extract_macaron_palette_from_image_sync(
+    img_path: str, fallback: dict[str, str]
+) -> dict[str, str]:
+    """
+    从推文插画中提取主导色相 (Dominant Hue)，并转换为与插画无缝融合的马卡龙色卡：
+    - 优先采样画面左半侧（与文字渐变交界处）及全图的高饱和像素，按色相分桶加权统计主色调
+    - 将主色相转换为高明度低饱和的马卡龙背景色 (card_rgb / card_soft_rgb)、边框色与高对比度强调色 (accent)
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return fallback
+
+    p = pathlib.Path(img_path)
+    if not p.exists() or not p.is_file():
+        return fallback
+
+    try:
+        with Image.open(p) as im:
+            rgb_im = im.convert("RGB").resize((64, 64))
+            w, h = rgb_im.size
+            px = rgb_im.load()
+
+            num_bins = 24
+            bin_weights = [0.0] * num_bins
+            bin_h_sum = [0.0] * num_bins
+            bin_s_sum = [0.0] * num_bins
+
+            for y in range(h):
+                for x in range(w):
+                    r, g, b = px[x, y]
+                    rf, gf, bf = r / 255.0, g / 255.0, b / 255.0
+                    hue, light, sat = colorsys.rgb_to_hls(rf, gf, bf)
+
+                    # 过滤接近纯白、纯黑或无彩度灰阶背景像素
+                    if light < 0.12 or light > 0.94 or sat < 0.12:
+                        continue
+
+                    # 处于卡片左半侧（与渐变文字区交界处）的像素赋予更高权重，使渐变过渡更自然
+                    pos_weight = 1.45 if x < (w * 0.55) else 1.0
+                    weight = (sat ** 1.15) * (1.0 - abs(light - 0.58)) * pos_weight
+                    if weight <= 0:
+                        continue
+
+                    b_idx = int(hue * num_bins) % num_bins
+                    bin_weights[b_idx] += weight
+                    bin_h_sum[b_idx] += hue * weight
+                    bin_s_sum[b_idx] += sat * weight
+
+            best_bin = max(range(num_bins), key=lambda i: bin_weights[i])
+            if bin_weights[best_bin] <= 0.01:
+                return fallback
+
+            dom_h = (bin_h_sum[best_bin] / bin_weights[best_bin]) % 1.0
+
+            def hls_to_rgb_tuple(h_val: float, l_val: float, s_val: float) -> tuple[int, int, int]:
+                rr, gg, bb = colorsys.hls_to_rgb(h_val, l_val, s_val)
+                return (
+                    max(0, min(255, int(round(rr * 255)))),
+                    max(0, min(255, int(round(gg * 255)))),
+                    max(0, min(255, int(round(bb * 255)))),
+                )
+
+            # 1. 马卡龙卡片主背景色 (柔和马卡龙粉彩 L=0.915, S=0.75，避免过白)
+            c_r, c_g, c_b = hls_to_rgb_tuple(dom_h, 0.915, 0.75)
+            # 2. 马卡龙卡片右侧衔接底色 (L=0.895, S=0.78)
+            cs_r, cs_g, cs_b = hls_to_rgb_tuple(dom_h, 0.895, 0.78)
+            # 3. 马卡龙边框色 (L=0.84, S=0.75)
+            cb_r, cb_g, cb_b = hls_to_rgb_tuple(dom_h, 0.84, 0.75)
+            # 4. 胶囊徽章与装饰条强调色 (L=0.44, S=0.76，保证白字与标签文字清晰可读)
+            ac_r, ac_g, ac_b = hls_to_rgb_tuple(dom_h, 0.44, 0.76)
+
+            return {
+                "name": "image_adaptive_macaron",
+                "card_rgb": f"{c_r}, {c_g}, {c_b}",
+                "card_soft_rgb": f"{cs_r}, {cs_g}, {cs_b}",
+                "card_border": f"#{cb_r:02X}{cb_g:02X}{cb_b:02X}",
+                "accent": f"#{ac_r:02X}{ac_g:02X}{ac_b:02X}",
+                "accent_rgb": f"{ac_r}, {ac_g}, {ac_b}",
+                "tag_bg": f"rgba({ac_r}, {ac_g}, {ac_b}, 0.11)",
+            }
+    except Exception:
+        return fallback
+
+
+
+_STATUS_URL_RE = re.compile(
+    r"https?://(?:www\.)?(?:x|twitter|fxtwitter|fixupx|vxtwitter)\.com/([A-Za-z0-9_]+)/status/(\d+)\S*",
+    re.I,
+)
+
+
+
+def _compute_harmonious_digest_theme(
+    rendered_items: list[dict[str, Any]], fallback: dict[str, str]
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """
+    综合所有新闻词条的颜色（而非仅看第 01 条），在色相环上通过余弦亲和度聚类与圆周向量合成，
+    计算出最契合整期所有词条的全局主题马卡龙色卡 (theme, theme_mid, theme_end)：
+    - 对所有词条提取色相角 (2*pi*H)，含插画词条赋予更高权重
+    - 计算每个词条与全局所有词条的色相余弦亲和度得分，找出整期日报的主导色系中心
+    - 对主导色系簇内的所有词条进行圆周向量加权平均，合成和谐统一的顶部标题 UI 配色（绝不因互补色直接相加而发灰发脏）
+    """
+    if not rendered_items:
+        return fallback, fallback, fallback
+
+    item_hues: list[tuple[float, float, dict[str, str]]] = []
+    for idx, item in enumerate(rendered_items):
+        pal = item.get("palette") or fallback
+        ac_rgb_str = str(pal.get("accent_rgb") or "214, 51, 108")
+        try:
+            parts = [int(x.strip()) for x in ac_rgb_str.split(",")]
+            r, g, b = parts[0] / 255.0, parts[1] / 255.0, parts[2] / 255.0
+            h_val, l_val, s_val = colorsys.rgb_to_hls(r, g, b)
+        except Exception:
+            h_val, l_val, s_val = 0.94, 0.44, 0.76
+
+        # 含插画提取色的词条权重更高
+        w = 1.4 if item.get("thumb_src") else 1.0
+        item_hues.append((h_val, w, pal))
+
+    # 1. 计算每个词条在整期所有词条中的色相亲和度得分，找出全局主导色系中心
+    best_center_h = item_hues[0][0]
+    best_score = -1.0
+    for h_i, w_i, _ in item_hues:
+        score = 0.0
+        for h_j, w_j, _ in item_hues:
+            angle_diff = 2.0 * math.pi * (h_i - h_j)
+            affinity = max(0.0, math.cos(angle_diff))
+            score += w_j * (affinity ** 1.5)
+        if score > best_score:
+            best_score = score
+            best_center_h = h_i
+
+    # 2. 对同属主导色系簇（色相差在 ±50° 内）的所有词条进行圆周向量平均，合成全局代表色相
+    sin_sum = 0.0
+    cos_sum = 0.0
+    for h_j, w_j, _ in item_hues:
+        angle_diff = 2.0 * math.pi * (h_j - best_center_h)
+        if math.cos(angle_diff) >= math.cos(math.radians(50)):
+            rad = 2.0 * math.pi * h_j
+            sin_sum += w_j * math.sin(rad)
+            cos_sum += w_j * math.cos(rad)
+
+    if abs(sin_sum) > 1e-6 or abs(cos_sum) > 1e-6:
+        synth_h = (math.atan2(sin_sum, cos_sum) / (2.0 * math.pi)) % 1.0
+    else:
+        synth_h = best_center_h
+
+    def build_palette_from_hue(h_val: float) -> dict[str, str]:
+        def hls_rgb(hh: float, ll: float, ss: float) -> tuple[int, int, int]:
+            rr, gg, bb = colorsys.hls_to_rgb(hh, ll, ss)
+            return (
+                max(0, min(255, int(round(rr * 255)))),
+                max(0, min(255, int(round(gg * 255)))),
+                max(0, min(255, int(round(bb * 255)))),
+            )
+
+        c_r, c_g, c_b = hls_rgb(h_val, 0.915, 0.75)
+        cs_r, cs_g, cs_b = hls_rgb(h_val, 0.895, 0.78)
+        cb_r, cb_g, cb_b = hls_rgb(h_val, 0.83, 0.75)
+        ac_r, ac_g, ac_b = hls_rgb(h_val, 0.43, 0.76)
+        return {
+            "name": "digest_AllItems_harmonic",
+            "card_rgb": f"{c_r}, {c_g}, {c_b}",
+            "card_soft_rgb": f"{cs_r}, {cs_g}, {cs_b}",
+            "card_border": f"#{cb_r:02X}{cb_g:02X}{cb_b:02X}",
+            "accent": f"#{ac_r:02X}{ac_g:02X}{ac_b:02X}",
+            "accent_rgb": f"{ac_r}, {ac_g}, {ac_b}",
+            "tag_bg": f"rgba({ac_r}, {ac_g}, {ac_b}, 0.12)",
+        }
+
+    main_theme = build_palette_from_hue(synth_h)
+
+    # 3. 找出与主色相搭配的第二代表色（用于渐变过渡条与中段背景）及收尾色
+    secondary_candidates = [
+        (h_j, w_j)
+        for h_j, w_j, _ in item_hues
+        if math.cos(2.0 * math.pi * (h_j - synth_h)) < math.cos(math.radians(25))
+    ]
+    if secondary_candidates:
+        sec_h = secondary_candidates[0][0]
+        mid_theme = build_palette_from_hue(sec_h)
+    else:
+        mid_theme = build_palette_from_hue((synth_h + 0.04) % 1.0)
+
+    end_theme = rendered_items[-1].get("palette") or mid_theme
+    return main_theme, mid_theme, end_theme
 
 
 def _clean_digest_text(text: str, is_summary: bool = False) -> str:
@@ -246,6 +439,9 @@ class TwitterRssPlugin(Star):
         self._migrate_legacy_config()
 
         self.http_client: httpx.AsyncClient | None = None
+        self._not_found_accounts: set[str] = set()
+        self._user_profile_cache: dict[str, dict[str, str]] = {}
+        self._status_detail_cache: dict[str, dict[str, Any]] = {}
         self._poll_task: asyncio.Task | None = None
         self._digest_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
@@ -616,12 +812,118 @@ class TwitterRssPlugin(Star):
                     candidates.append(u)
         return candidates
 
+    async def _check_user_not_found_on_twitter(
+        self, account: str, explicit_404_hits: int
+    ) -> bool:
+        """
+        向权威接口 (api.fxtwitter.com/{username}) 核验该推特 ID 是否确实不存在 (404 Not Found)。
+        避免把单一公共 RSSHub 节点故障误判为账号不存在。
+        """
+        acct_clean = account.strip().lstrip("@")
+        if not acct_clean:
+            return True
+        if not acct_clean.startswith(("http://", "https://")):
+            if not re.match(r"^[A-Za-z0-9_]{1,15}$", acct_clean):
+                return True
+            username = acct_clean
+        else:
+            username = acct_clean.rstrip("/").split("/")[-1].lstrip("@")
+
+        if not self.http_client or self.http_client.is_closed:
+            await self._init_http_client()
+
+        try:
+            check_url = f"https://api.fxtwitter.com/{username}"
+            resp = await self.http_client.get(check_url)
+            if resp.status_code == 404:
+                return True
+            if resp.status_code == 200:
+                data = resp.json()
+                code_val = data.get("code")
+                msg_val = str(data.get("message") or "").lower()
+                if code_val == 404 or "not found" in msg_val or "suspended" in msg_val:
+                    return True
+                if data.get("user"):
+                    return False
+        except Exception:
+            pass
+
+        return explicit_404_hits >= 2
+
+    def _auto_remove_invalid_account(
+        self, account: str, target_rule: dict[str, Any] | None = None
+    ) -> list[str]:
+        """当确认某个推特 ID 不存在时，自动将其从订阅列表中移除并保存配置"""
+        acct_lower = account.strip().lstrip("@").lower()
+        removed_group_names: list[str] = []
+
+        rules_to_check = (
+            [target_rule]
+            if target_rule is not None
+            else self._get_group_rules()
+        )
+        all_rules = self._get_group_rules()
+        changed = False
+
+        for r in all_rules:
+            if target_rule is not None and r is not target_rule:
+                continue
+            accts = self._get_rule_accounts(r)
+            new_accts = [a for a in accts if a.lower() != acct_lower]
+            if len(new_accts) != len(accts):
+                r["twitter_accounts"] = new_accts
+                gname = str(r.get("group_name") or r.get("target_umo") or "未命名群聊")
+                removed_group_names.append(gname)
+                changed = True
+
+        # 同步清理旧版全局顶层列表（若存在）
+        legacy_accts = self._clean_str_list(self.config.get("twitter_accounts", []))
+        if any(a.lstrip("@").lower() == acct_lower for a in legacy_accts):
+            self.config["twitter_accounts"] = [
+                a for a in legacy_accts if a.lstrip("@").lower() != acct_lower
+            ]
+            changed = True
+
+        if not self.state.get("migrated_skip_rt_v142"):
+            self.config["skip_retweets"] = True
+            for r in self.config.get("group_subscriptions", []):
+                if isinstance(r, dict) and "skip_retweets" not in r:
+                    r["skip_retweets"] = True
+            self.state["migrated_skip_rt_v142"] = True
+            changed = True
+            try:
+                self.state_file.write_text(
+                    json.dumps(self.state, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
+
+        if changed:
+            self._save_plugin_config()
+            logger.warning(
+                f"[TwitterRSS] 检测到推特账号 @{account} 不存在 (404)，已自动从订阅列表 {removed_group_names} 中移除。"
+            )
+        return removed_group_names
+
     async def _fetch_account_tweets(self, account: str) -> list[dict[str, Any]]:
         if not self.http_client or self.http_client.is_closed:
             await self._init_http_client()
 
+        acct_key = account.strip().lstrip("@").lower()
+        self._not_found_accounts.discard(acct_key)
+
+        acct_clean = account.strip().lstrip("@")
+        if not acct_clean.startswith(("http://", "https://")) and not re.match(
+            r"^[A-Za-z0-9_]{1,15}$", acct_clean
+        ):
+            self._not_found_accounts.add(acct_key)
+            logger.warning(f"[TwitterRSS] 账号 ID 格式无效 ({account})，标记为不存在。")
+            return []
+
         candidate_urls = self._get_candidate_urls(account)
         errors: list[str] = []
+        explicit_404_hits = 0
 
         for url in candidate_urls:
             try:
@@ -629,6 +931,15 @@ class TwitterRssPlugin(Star):
                 final_url = str(resp.url)
                 if "google.com/404" in final_url or "x.com/i/flow/login" in final_url:
                     errors.append(f"{url} -> 重定向至无效页面 ({final_url})")
+                    continue
+
+                if resp.status_code == 404:
+                    if any(
+                        d in url
+                        for d in ("fxtwitter.com", "fixupx.com", "api.fxtwitter.com")
+                    ):
+                        explicit_404_hits += 1
+                    errors.append(f"{url} -> HTTP 404 Not Found")
                     continue
 
                 resp.raise_for_status()
@@ -643,6 +954,17 @@ class TwitterRssPlugin(Star):
                     or body_text.startswith("{")
                     or body_text.startswith("[")
                 ):
+                    try:
+                        jdata = json.loads(body_text)
+                        if isinstance(jdata, dict) and (
+                            jdata.get("code") == 404
+                            or "not found" in str(jdata.get("message") or "").lower()
+                        ):
+                            explicit_404_hits += 1
+                            errors.append(f"{url} -> User not found (404)")
+                            continue
+                    except Exception:
+                        pass
                     tweets = await asyncio.to_thread(
                         self._parse_fxtwitter_json, body_text, account
                     )
@@ -657,11 +979,237 @@ class TwitterRssPlugin(Star):
             except Exception as e:
                 errors.append(f"{url} -> {e}")
 
+        if await self._check_user_not_found_on_twitter(account, explicit_404_hits):
+            self._not_found_accounts.add(acct_key)
+            logger.warning(f"[TwitterRSS] 经核验推特账号 @{account} 不存在 (404 User Not Found)。")
+            return []
+
         logger.warning(
             f"[TwitterRSS] 账号 {account} 所有订阅源均获取失败：\n"
             + "\n".join(f"  - {err}" for err in errors[:4])
         )
         return []
+
+
+    async def _fetch_user_profile_cached(self, username: str) -> dict[str, str]:
+        """
+        从权威接口 https://api.fxtwitter.com/{username} 获取该画师本人的真实头像与昵称，
+        彻底解决 RSS <channel><image> 因最新一条是转推而错误变成被转发对象头像的问题。
+        """
+        uname = username.strip().lstrip("@")
+        if not uname or uname.startswith(("http://", "https://")):
+            return {}
+        key = uname.lower()
+        if key in self._user_profile_cache:
+            return self._user_profile_cache[key]
+
+        if not self.http_client or self.http_client.is_closed:
+            await self._init_http_client()
+
+        try:
+            resp = await self.http_client.get(f"https://api.fxtwitter.com/{uname}")
+            if resp.status_code == 200:
+                data = resp.json()
+                user_obj = data.get("user")
+                if isinstance(user_obj, dict):
+                    prof = {
+                        "username": str(user_obj.get("screen_name") or uname).strip(),
+                        "author_name": str(user_obj.get("name") or uname).strip(),
+                        "avatar_url": str(
+                            user_obj.get("avatar_url")
+                            or user_obj.get("profile_image_url_https")
+                            or ""
+                        ).strip(),
+                    }
+                    if prof["avatar_url"]:
+                        self._user_profile_cache[key] = prof
+                        return prof
+        except Exception as e:
+            logger.debug(f"[TwitterRSS] 获取用户 @{uname} 个人资料跳过: {e}")
+
+        return {}
+
+    async def _fetch_single_status_cached(
+        self, target_user: str, status_id: str
+    ) -> dict[str, Any]:
+        """
+        根据转推或引用推文的 (username, status_id) 从 api.fxtwitter.com 获取原推真实作者、头像、正文与配图
+        """
+        skey = f"{target_user.lower()}::{status_id}"
+        if skey in self._status_detail_cache:
+            return self._status_detail_cache[skey]
+
+        if not self.http_client or self.http_client.is_closed:
+            await self._init_http_client()
+
+        try:
+            url = f"https://api.fxtwitter.com/{target_user}/status/{status_id}"
+            resp = await self.http_client.get(url)
+            if resp.status_code == 200:
+                data = resp.json()
+                tw = data.get("tweet") or data.get("status")
+                if isinstance(tw, dict):
+                    author = tw.get("author") or tw.get("user") or {}
+                    q_uname = str(author.get("screen_name") or target_user).strip().lstrip("@")
+                    q_name = str(author.get("name") or q_uname).strip()
+                    q_avatar = str(
+                        author.get("avatar_url")
+                        or author.get("profile_image_url_https")
+                        or ""
+                    ).strip()
+                    q_text = str(tw.get("text") or tw.get("full_text") or "").strip()
+                    q_imgs: list[str] = []
+                    media = tw.get("media")
+                    if isinstance(media, dict):
+                        for p in media.get("photos") or []:
+                            if isinstance(p, dict) and p.get("url"):
+                                q_imgs.append(str(p["url"]).strip())
+                        if not q_imgs:
+                            for m in media.get("all") or []:
+                                if isinstance(m, dict) and m.get("type") in ("photo", "image", "gif"):
+                                    u = m.get("url") or m.get("thumbnail_url")
+                                    if u:
+                                        q_imgs.append(str(u).strip())
+                    res = {
+                        "username": q_uname,
+                        "author_name": q_name,
+                        "avatar_url": q_avatar,
+                        "text": q_text,
+                        "images": q_imgs,
+                    }
+                    self._status_detail_cache[skey] = res
+                    return res
+        except Exception as e:
+            logger.debug(f"[TwitterRSS] 获取引用/原推详情 {target_user}/{status_id} 失败: {e}")
+
+        return {}
+
+    @classmethod
+    def _analyze_retweet_and_quote(
+        cls,
+        raw_text: str,
+        title: str,
+        link: str,
+        creator_handle: str,
+        subscribed_username: str,
+        explicit_is_rt: bool = False,
+        explicit_quote: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        精准识别【纯转发 (is_retweet)】与【引用转发 (is_quote)】：
+        1. 若正文去掉 https://x.com/xxx/status/yyy 链接后为空（如截图中仅有一条原推链接的转推），
+           或 <link>/<dc:creator> 指向其他账号，或以 RT @ 开头 -> 判定为纯转发 (is_retweet=True)，并提取原推作者与 status_id。
+        2. 若本人有配文 且 包含其他推文状态链接或 quote 对象 -> 判定为引用转发 (is_quote=True)，剔除正文中的裸链接。
+        """
+        sub_lower = subscribed_username.strip().lstrip("@").lower()
+        text = (raw_text or "").strip()
+        title_str = (title or "").strip()
+
+        # 清理旧式「引用：https://x.com/...」包装，提取其中的状态链接
+        url_matches = list(_STATUS_URL_RE.finditer(text))
+        link_match = _STATUS_URL_RE.search(link or "")
+
+        link_user = link_match.group(1) if link_match else ""
+        link_sid = link_match.group(2) if link_match else ""
+
+        creator_clean = re.sub(r"^@", "", (creator_handle or "").strip())
+        # 提取括号内的 @handle（若有，如 "xxx (@handle)"）
+        m_handle = re.search(r"\(@([A-Za-z0-9_]+)\)", creator_clean)
+        if m_handle:
+            creator_clean = m_handle.group(1)
+
+        # 移除正文中的所有推文状态链接及空的引用括号
+        text_no_urls = _STATUS_URL_RE.sub("", text)
+        text_no_urls = re.sub(r"「引用[：:]\s*」", "", text_no_urls)
+        # 移除 RT @xxx: 前缀以便检查是否有本人正文
+        rt_prefix_match = re.match(
+            r"^(?:RT|R\s+to|Retweet)\s+@?([A-Za-z0-9_]+)[：:\s]*",
+            text_no_urls,
+            flags=re.I,
+        )
+        title_rt_match = re.match(
+            r"^(?:RT|R\s+to|Retweet)\s+@?([A-Za-z0-9_]+)",
+            title_str,
+            flags=re.I,
+        )
+        text_no_urls = text_no_urls.strip()
+
+        is_retweet = bool(explicit_is_rt or rt_prefix_match or title_rt_match)
+        rt_user = ""
+        rt_sid = ""
+
+        if rt_prefix_match:
+            rt_user = rt_prefix_match.group(1)
+        elif title_rt_match:
+            rt_user = title_rt_match.group(1)
+
+        # 检查 <link> 是否指向其他人的推文
+        if link_user and sub_lower and link_user.lower() != sub_lower:
+            is_retweet = True
+            rt_user = link_user
+            rt_sid = link_sid
+
+        # 检查正文是否仅由一条推文链接构成（即 FxTwitter 把纯转推/无配文引用解析成了裸链接！）
+        if not is_retweet and url_matches and not text_no_urls:
+            first_u, first_sid = url_matches[0].group(1), url_matches[0].group(2)
+            is_retweet = True
+            rt_user = first_u
+            rt_sid = first_sid
+
+        if is_retweet:
+            if not rt_user and url_matches:
+                rt_user, rt_sid = url_matches[0].group(1), url_matches[0].group(2)
+            elif not rt_sid and url_matches:
+                rt_sid = url_matches[0].group(2)
+            elif not rt_sid and link_sid:
+                rt_sid = link_sid
+            cleaned_main_text = re.sub(
+                r"^(?:RT|R\s+to|Retweet)\s+@?[A-Za-z0-9_]+[：:\s]*",
+                "",
+                text_no_urls,
+                flags=re.I,
+            ).strip()
+            return {
+                "is_retweet": True,
+                "is_quote": False,
+                "clean_text": cleaned_main_text,
+                "rt_username": rt_user,
+                "rt_status_id": rt_sid,
+                "quote_username": "",
+                "quote_status_id": "",
+                "quote_data": None,
+            }
+
+        # 检查是否为带配文的引用转发 (Quote Tweet)
+        is_quote = False
+        q_user = ""
+        q_sid = ""
+        q_data = explicit_quote if isinstance(explicit_quote, dict) else None
+
+        if q_data:
+            is_quote = True
+            q_author = q_data.get("author") or q_data.get("user") or {}
+            q_user = str(q_author.get("screen_name") or "").strip().lstrip("@")
+            q_sid = str(q_data.get("id") or q_data.get("id_str") or "").strip()
+        elif url_matches and text_no_urls:
+            for um in url_matches:
+                u_name, u_sid = um.group(1), um.group(2)
+                if not link_sid or u_sid != link_sid:
+                    is_quote = True
+                    q_user = u_name
+                    q_sid = u_sid
+                    break
+
+        return {
+            "is_retweet": False,
+            "is_quote": is_quote,
+            "clean_text": text_no_urls if (is_quote or url_matches) else text,
+            "rt_username": "",
+            "rt_status_id": "",
+            "quote_username": q_user,
+            "quote_status_id": q_sid,
+            "quote_data": q_data,
+        }
 
     def _parse_fxtwitter_json(self, json_text: str, account: str) -> list[dict[str, Any]]:
         try:
@@ -684,7 +1232,11 @@ class TwitterRssPlugin(Star):
                 raw_list = [data["tweet"]]
 
         tweets: list[dict[str, Any]] = []
-        username_fallback = account.split("/")[-1] if account.startswith("http") else account
+        username_fallback = (
+            account.rstrip("/").split("/")[-1].lstrip("@")
+            if account.startswith(("http://", "https://"))
+            else account.strip().lstrip("@")
+        )
 
         for item in raw_list:
             if not isinstance(item, dict):
@@ -692,8 +1244,11 @@ class TwitterRssPlugin(Star):
             st = item.get("status") if isinstance(item.get("status"), dict) else item
             st = st.get("tweet") if isinstance(st.get("tweet"), dict) else st
 
+            rt_obj = st.get("retweeted_status") or item.get("retweeted_status")
+            explicit_is_rt = isinstance(rt_obj, dict)
+
             tid = str(st.get("id") or st.get("id_str") or st.get("url") or "").strip()
-            text = str(
+            raw_text = str(
                 st.get("text")
                 or st.get("full_text")
                 or (st.get("raw_text", {}) if isinstance(st.get("raw_text"), dict) else {}).get("text")
@@ -703,13 +1258,13 @@ class TwitterRssPlugin(Star):
             author = st.get("author") or st.get("user") or {}
             if not isinstance(author, dict):
                 author = {}
-            username = str(
+            item_username = str(
                 author.get("screen_name")
                 or author.get("handle")
                 or username_fallback
             ).strip().lstrip("@")
-            author_name = str(author.get("name") or username).strip()
-            avatar_url = str(
+            item_author_name = str(author.get("name") or item_username).strip()
+            item_avatar_url = str(
                 author.get("avatar_url")
                 or author.get("profile_image_url_https")
                 or ""
@@ -717,7 +1272,7 @@ class TwitterRssPlugin(Star):
 
             link = str(
                 st.get("url")
-                or (f"https://x.com/{username}/status/{tid}" if tid else "")
+                or (f"https://x.com/{item_username}/status/{tid}" if tid else "")
             ).strip()
 
             images: list[str] = []
@@ -745,16 +1300,16 @@ class TwitterRssPlugin(Star):
                 if isinstance(u, str) and u not in images:
                     images.append(u.strip())
 
-            quote = st.get("quote")
-            if isinstance(quote, dict):
-                q_author = (quote.get("author") or {}).get("screen_name") or ""
-                q_text = quote.get("text") or ""
-                if q_text:
-                    text = f"{text}\n\n「引用 @{q_author}: {q_text}」".strip()
-                if not images and isinstance(quote.get("media"), dict):
-                    for p in quote["media"].get("photos") or []:
-                        if isinstance(p, dict) and p.get("url"):
-                            images.append(str(p["url"]).strip())
+            quote_obj = st.get("quote") if isinstance(st.get("quote"), dict) else None
+            rt_analysis = self._analyze_retweet_and_quote(
+                raw_text=raw_text,
+                title=raw_text[:60],
+                link=link,
+                creator_handle=item_username,
+                subscribed_username=username_fallback,
+                explicit_is_rt=explicit_is_rt,
+                explicit_quote=quote_obj,
+            )
 
             created_ts = st.get("created_timestamp")
             if isinstance(created_ts, (int, float)) and created_ts > 0:
@@ -765,20 +1320,32 @@ class TwitterRssPlugin(Star):
                 ts, pub_str = self._parse_pub_date(str(st.get("created_at") or ""))
 
             if not tid:
-                tid = link or hashlib.md5(f"{username}:{text[:80]}".encode()).hexdigest()
+                tid = link or hashlib.md5(f"{username_fallback}:{raw_text[:80]}".encode()).hexdigest()
+
+            # 只有当 item_username 确实是订阅账号本人时，才采用其 avatar_url，防止转推污染本人头像
+            is_self_author = item_username.lower() == username_fallback.lower()
+            safe_avatar = item_avatar_url if is_self_author else ""
+            safe_author_name = item_author_name if is_self_author else username_fallback
 
             tweets.append(
                 {
                     "id": tid,
-                    "username": username,
-                    "author_name": author_name,
-                    "avatar_url": avatar_url,
-                    "title": text[:60],
-                    "text": text,
+                    "username": username_fallback,
+                    "author_name": safe_author_name,
+                    "avatar_url": safe_avatar,
+                    "title": rt_analysis["clean_text"][:60],
+                    "text": rt_analysis["clean_text"],
                     "images": images,
                     "link": link,
                     "timestamp": ts,
                     "pub_date": pub_str,
+                    "is_retweet": rt_analysis["is_retweet"],
+                    "is_quote": rt_analysis["is_quote"],
+                    "rt_username": rt_analysis["rt_username"],
+                    "rt_status_id": rt_analysis["rt_status_id"],
+                    "quote_username": rt_analysis["quote_username"],
+                    "quote_status_id": rt_analysis["quote_status_id"],
+                    "quote_data": rt_analysis["quote_data"],
                 }
             )
 
@@ -791,18 +1358,18 @@ class TwitterRssPlugin(Star):
         except ET.ParseError:
             return []
 
-        username_fallback = account.split("/")[-1] if account.startswith("http") else account
+        username_fallback = (
+            account.rstrip("/").split("/")[-1].lstrip("@")
+            if account.startswith(("http://", "https://"))
+            else account.strip().lstrip("@")
+        )
         channel_title = username_fallback
-        channel_avatar = ""
         channel = root.find("channel")
         if channel is not None:
             ct = channel.findtext("title")
             if ct:
                 cleaned_ct = re.sub(r"^(?:Twitter|X)\s*@?\s*", "", ct, flags=re.I).strip()
                 channel_title = re.sub(r"\s*\(@[A-Za-z0-9_]+\)\s*$", "", cleaned_ct).strip() or username_fallback
-            img_el = channel.find("image")
-            if img_el is not None and img_el.findtext("url"):
-                channel_avatar = img_el.findtext("url", "").strip()
 
         items_els = root.findall(".//item")
         is_atom = False
@@ -830,7 +1397,7 @@ class TwitterRssPlugin(Star):
                     self._find_atom_text(el, "published")
                     or self._find_atom_text(el, "updated")
                 )
-                author_name = self._find_atom_text(el, "author/name") or channel_title
+                creator_raw = self._find_atom_text(el, "author/name") or ""
             else:
                 title = (el.findtext("title") or "").strip()
                 link = (el.findtext("link") or "").strip()
@@ -843,34 +1410,61 @@ class TwitterRssPlugin(Star):
                     or el.findtext("{http://purl.org/dc/elements/1.1/}date")
                     or ""
                 ).strip()
-                author_name = (
+                creator_raw = (
                     el.findtext("{http://purl.org/dc/elements/1.1/}creator")
                     or el.findtext("author")
-                    or channel_title
+                    or ""
                 ).strip()
-                author_name = re.sub(r"^@", "", author_name).strip() or channel_title
+
+            # 提取 HTML 中可能内嵌的其它推文链接（例如 <a href="https://x.com/ienu0ienu/status/...">）
+            embedded_status_urls: list[str] = []
+            for m_href in re.finditer(r"""href=["'](https?://[^"']+/status/\d+[^"']*)["']""", raw_html, flags=re.I):
+                u_href = html.unescape(m_href.group(1)).strip()
+                if u_href not in embedded_status_urls:
+                    embedded_status_urls.append(u_href)
 
             images = self._extract_images(el, raw_html)
             clean_text = self._clean_html_to_text(raw_html)
             if not clean_text and title:
                 clean_text = self._clean_html_to_text(title)
 
+            for eu in embedded_status_urls:
+                if eu not in clean_text and eu != link:
+                    clean_text = f"{clean_text}\n{eu}".strip()
+
+            rt_analysis = self._analyze_retweet_and_quote(
+                raw_text=clean_text,
+                title=title,
+                link=link,
+                creator_handle=creator_raw,
+                subscribed_username=username_fallback,
+            )
+
             ts, pub_str = self._parse_pub_date(pub_raw)
             username = username_fallback
-
             tweet_id = guid or link or hashlib.md5(f"{username}:{clean_text[:80]}".encode()).hexdigest()
+
+            # 注意：绝不使用 FxTwitter RSS 的 <channel><image><url>，因为当第一条是转推时它会变成被转发人的头像！
+            # 订阅者本人的真实头像与名称统一在 _prepare_tweet_media 中通过 _fetch_user_profile_cached(username) 获取。
             tweets.append(
                 {
                     "id": tweet_id,
                     "username": username,
-                    "author_name": author_name or username,
-                    "avatar_url": channel_avatar,
+                    "author_name": channel_title or username,
+                    "avatar_url": "",
                     "title": title,
-                    "text": clean_text,
+                    "text": rt_analysis["clean_text"],
                     "images": images,
                     "link": link,
                     "timestamp": ts,
                     "pub_date": pub_str,
+                    "is_retweet": rt_analysis["is_retweet"],
+                    "is_quote": rt_analysis["is_quote"],
+                    "rt_username": rt_analysis["rt_username"],
+                    "rt_status_id": rt_analysis["rt_status_id"],
+                    "quote_username": rt_analysis["quote_username"],
+                    "quote_status_id": rt_analysis["quote_status_id"],
+                    "quote_data": rt_analysis["quote_data"],
                 }
             )
 
@@ -920,8 +1514,7 @@ class TwitterRssPlugin(Star):
             return ""
         text = re.sub(r"<br\s*/?>", "\n", raw_html, flags=re.I)
         text = re.sub(r"</p\s*>", "\n\n", text, flags=re.I)
-        text = re.sub(r"<blockquote[^>]*>", "\n「引用：", text, flags=re.I)
-        text = re.sub(r"</blockquote\s*>", "」\n", text, flags=re.I)
+        text = re.sub(r"</?blockquote[^>]*>", "\n", text, flags=re.I)
         text = re.sub(r"<[^>]+>", "", text)
         text = html.unescape(text)
         lines = [line.strip() for line in text.splitlines()]
@@ -1015,30 +1608,150 @@ class TwitterRssPlugin(Star):
         b64 = base64.b64encode(path.read_bytes()).decode("ascii")
         return f"data:{mime};base64,{b64}"
 
+    def _should_skip_tweet(
+        self, tweet: dict[str, Any], group_rule: dict[str, Any] | None = None
+    ) -> bool:
+        """检查推文是否应因【纯转发 (RT)】或【回复】被直接跳过"""
+        skip_rt = bool(
+            group_rule.get("skip_retweets", self.config.get("skip_retweets", True))
+            if isinstance(group_rule, dict) and "skip_retweets" in group_rule
+            else self.config.get("skip_retweets", True)
+        )
+        text = str(tweet.get("text") or "").strip()
+        if skip_rt and (
+            tweet.get("is_retweet")
+            or re.match(r"^(?:RT|R\s+to|Retweet)\s+@", text, flags=re.I)
+        ):
+            return True
+        if self.config.get("skip_replies", True) and re.match(
+            r"^(?:Re\s+@|@)", text, flags=re.I
+        ):
+            return True
+        return False
+
     async def _prepare_tweet_media(self, tweet: dict[str, Any]) -> dict[str, Any]:
-        """预下载推文头像、配图并拆分正文与标签，供多群复用"""
+        """
+        预下载推文真实头像、配图并拆分正文与标签，同时处理：
+        1. 通过 _fetch_user_profile_cached 获取订阅画师本人的真实头像与昵称（绝不混用转推对象头像）
+        2. 若为未跳过的转推 (is_retweet)，拉取被转推原帖信息并组装转推横幅数据
+        3. 若为引用转发 (is_quote)，拉取被引用原帖信息并组装嵌套引用卡片 (quote_info)
+        """
         if "_media_prepared" in tweet:
             return tweet
 
-        orig_body, orig_tags = self._split_tweet_body_and_tags(tweet.get("text", ""))
-        avatar_data_uri = ""
-        if tweet.get("avatar_url"):
-            _, avatar_b64 = await self._download_image_cached(tweet["avatar_url"])
-            avatar_data_uri = avatar_b64 or tweet["avatar_url"]
+        prepared = dict(tweet)
+        sub_username = str(prepared.get("username") or "").strip().lstrip("@")
+
+        # 1. 权威获取订阅画师本人的真实头像与昵称
+        sub_prof = await self._fetch_user_profile_cached(sub_username)
+        if sub_prof.get("author_name"):
+            prepared["author_name"] = sub_prof["author_name"]
+        if sub_prof.get("avatar_url"):
+            prepared["avatar_url"] = sub_prof["avatar_url"]
+
+        sub_avatar_src = ""
+        if prepared.get("avatar_url"):
+            _, sub_b64 = await self._download_image_cached(prepared["avatar_url"])
+            sub_avatar_src = sub_b64 or prepared["avatar_url"]
+
+        # 2. 若是转推 (is_retweet=True，且用户关闭了 skip_retweets 选择渲染转推)
+        if prepared.get("is_retweet"):
+            prepared["retweeter_username"] = sub_username
+            prepared["retweeter_name"] = prepared.get("author_name") or sub_username
+            prepared["retweeter_avatar_src"] = sub_avatar_src
+
+            rt_user = str(prepared.get("rt_username") or "").strip().lstrip("@")
+            rt_sid = str(prepared.get("rt_status_id") or "").strip()
+            if rt_user and rt_sid:
+                rt_detail = await self._fetch_single_status_cached(rt_user, rt_sid)
+                if rt_detail:
+                    prepared["username"] = rt_detail["username"]
+                    prepared["author_name"] = rt_detail["author_name"]
+                    prepared["avatar_url"] = rt_detail["avatar_url"]
+                    if rt_detail.get("text"):
+                        prepared["text"] = rt_detail["text"]
+                    if rt_detail.get("images"):
+                        prepared["images"] = rt_detail["images"]
+            elif rt_user:
+                rt_prof = await self._fetch_user_profile_cached(rt_user)
+                prepared["username"] = rt_user
+                prepared["author_name"] = rt_prof.get("author_name") or rt_user
+                prepared["avatar_url"] = rt_prof.get("avatar_url") or ""
+
+        # 3. 下载当前主展示作者的头像
+        avatar_data_uri = sub_avatar_src
+        if prepared.get("username", "").lower() != sub_username.lower():
+            avatar_data_uri = ""
+            if prepared.get("avatar_url"):
+                _, b64_rt = await self._download_image_cached(prepared["avatar_url"])
+                avatar_data_uri = b64_rt or prepared["avatar_url"]
+
+        # 4. 若是引用推文 (is_quote=True)，组装嵌套引用框 quote_info
+        quote_info: dict[str, Any] | None = None
+        if prepared.get("is_quote"):
+            q_user = str(prepared.get("quote_username") or "").strip().lstrip("@")
+            q_sid = str(prepared.get("quote_status_id") or "").strip()
+            q_detail: dict[str, Any] = {}
+            if q_user and q_sid:
+                q_detail = await self._fetch_single_status_cached(q_user, q_sid)
+            if not q_detail and isinstance(prepared.get("quote_data"), dict):
+                qd = prepared["quote_data"]
+                qa = qd.get("author") or qd.get("user") or {}
+                q_imgs: list[str] = []
+                if isinstance(qd.get("media"), dict):
+                    for p in qd["media"].get("photos") or []:
+                        if isinstance(p, dict) and p.get("url"):
+                            q_imgs.append(str(p["url"]).strip())
+                q_detail = {
+                    "username": str(qa.get("screen_name") or q_user or "x").strip(),
+                    "author_name": str(qa.get("name") or qa.get("screen_name") or q_user or "X").strip(),
+                    "avatar_url": str(qa.get("avatar_url") or qa.get("profile_image_url_https") or "").strip(),
+                    "text": str(qd.get("text") or qd.get("full_text") or "").strip(),
+                    "images": q_imgs,
+                }
+            if q_detail:
+                q_body, q_tags = self._split_tweet_body_and_tags(q_detail.get("text", ""))
+                q_avatar_src = ""
+                if q_detail.get("avatar_url"):
+                    _, qb64 = await self._download_image_cached(q_detail["avatar_url"])
+                    q_avatar_src = qb64 or q_detail["avatar_url"]
+                q_disp_imgs: list[str] = []
+                for q_img_url in q_detail.get("images", []):
+                    _, q_img_b64 = await self._download_image_cached(q_img_url)
+                    q_disp_imgs.append(q_img_b64 or q_img_url)
+                q_aname = q_detail.get("author_name") or q_detail.get("username") or "X"
+                quote_info = {
+                    "username": q_detail.get("username", ""),
+                    "author_name": q_aname,
+                    "author_initial": q_aname[:1].upper(),
+                    "avatar_src": q_avatar_src,
+                    "orig_body": q_body,
+                    "orig_tags": q_tags,
+                    "display_images": q_disp_imgs,
+                }
+
+        orig_body, orig_tags = self._split_tweet_body_and_tags(prepared.get("text", ""))
 
         local_image_paths: list[str] = []
         display_image_srcs: list[str] = []
-        for img_url in tweet.get("images", []):
+        for img_url in prepared.get("images", []):
             local_path, data_uri = await self._download_image_cached(img_url)
             local_image_paths.append(local_path or img_url)
             display_image_srcs.append(data_uri or img_url)
 
-        prepared = dict(tweet)
+        # 若引用推文自身带图而外层推文无图，也将引用推文的图片纳入原图发送与视觉评估列表
+        if not local_image_paths and quote_info and q_detail.get("images"):
+            for img_url in q_detail["images"]:
+                local_path, _ = await self._download_image_cached(img_url)
+                if local_path:
+                    local_image_paths.append(local_path)
+
         prepared["orig_body"] = orig_body
         prepared["orig_tags"] = orig_tags
         prepared["avatar_src"] = avatar_data_uri
         prepared["local_images"] = local_image_paths
         prepared["display_images"] = display_image_srcs
+        prepared["quote_info"] = quote_info
         prepared["translated_body"] = ""
         prepared["translated_tags"] = []
         prepared["_media_prepared"] = True
@@ -1307,10 +2020,10 @@ class TwitterRssPlugin(Star):
         self, prepared_tweet: dict[str, Any], group_rule: dict[str, Any]
     ) -> tuple[bool, dict[str, Any]]:
         """针对单个群聊的独立规则评估推文是否值得推送"""
-        text = prepared_tweet.get("text", "").strip()
-        if self.config.get("skip_retweets", False) and re.match(r"^RT\s+@", text, flags=re.I):
-            return False, prepared_tweet
-        if self.config.get("skip_replies", True) and re.match(r"^(?:Re\s+@|@)", text, flags=re.I):
+        if self._should_skip_tweet(prepared_tweet, group_rule):
+            logger.info(
+                f"[TwitterRSS] 推文 {prepared_tweet.get('id')} (@{prepared_tweet.get('username')}) 为纯转推或回复，已按配置自动跳过。"
+            )
             return False, prepared_tweet
 
         enriched = dict(prepared_tweet)
@@ -1444,6 +2157,10 @@ class TwitterRssPlugin(Star):
         translated_tags = enriched_tweet.get("translated_tags", [])
 
         render_payload = {
+            "is_retweet": bool(enriched_tweet.get("is_retweet", False)),
+            "retweeter_username": enriched_tweet.get("retweeter_username", ""),
+            "retweeter_name": enriched_tweet.get("retweeter_name", ""),
+            "retweeter_avatar_src": enriched_tweet.get("retweeter_avatar_src", ""),
             "author_name": author_name,
             "author_initial": author_name[:1].upper(),
             "username": enriched_tweet.get("username", ""),
@@ -1452,6 +2169,7 @@ class TwitterRssPlugin(Star):
             "orig_tags": orig_tags,
             "translated_body": translated_body,
             "translated_tags": translated_tags,
+            "quote_info": enriched_tweet.get("quote_info"),
             "display_images": enriched_tweet.get("display_images", []),
             "pub_date": enriched_tweet.get("pub_date", ""),
         }
@@ -1460,7 +2178,63 @@ class TwitterRssPlugin(Star):
         raw_images = enriched_tweet.get("local_images", [])
         send_mode = str(self.config.get("push_send_mode", "separate_messages") or "separate_messages")
 
+        # 合并转发判断：当开启 enable_merge_forward_over_3 且（原图数 > 3 或 渲染卡+原图总数 > 3）时，使用合并转发
+        enable_merge_forward = bool(self.config.get("enable_merge_forward_over_3", True))
+        merge_threshold = max(1, int(self.config.get("merge_forward_image_threshold", 3) or 3))
+        total_img_count = 1 + len(raw_images)  # 1张渲染推文卡 + N张原图
+        use_merge_forward = enable_merge_forward and (
+            len(raw_images) > merge_threshold or total_img_count > merge_threshold
+        )
+
         try:
+            if use_merge_forward:
+                sender_name = f"{author_name} (@{enriched_tweet.get('username', 'X')})"
+                bot_uin = str(self.config.get("merge_forward_uin", "10000") or "10000").strip()
+                if not bot_uin.isdigit():
+                    bot_uin = "10000"
+
+                # 若是 OneBot v11 (aiocqhttp) 等支持 Comp.Node 的平台，构造合并转发节点
+                if not umo.lower().startswith("qq_official:") and hasattr(Comp, "Node"):
+                    try:
+                        node_list = [
+                            Comp.Node(
+                                uin=int(bot_uin),
+                                name=sender_name,
+                                content=[self._make_image_comp(rendered_card_path)],
+                            )
+                        ]
+                        for raw_img in raw_images:
+                            node_list.append(
+                                Comp.Node(
+                                    uin=int(bot_uin),
+                                    name=sender_name,
+                                    content=[self._make_image_comp(raw_img)],
+                                )
+                            )
+                        forward_comp = (
+                            Comp.Nodes(node_list)
+                            if hasattr(Comp, "Nodes")
+                            else node_list
+                        )
+                        chain_items = (
+                            [forward_comp]
+                            if not isinstance(forward_comp, list)
+                            else forward_comp
+                        )
+                        await self.context.send_message(umo, MessageChain(chain_items))
+                        return
+                    except Exception as fwd_err:
+                        logger.warning(
+                            f"[TwitterRSS] 合并转发 (Comp.Nodes) 发送失败，自动回退为单条合并消息链发送: {fwd_err}"
+                        )
+
+                # 若当前平台为 qq_official（腾讯官方接口不支持伪造合并转发节点）或合并转发异常，自动回退为单条消息链合并发送
+                chain_comps = [self._make_image_comp(rendered_card_path)]
+                for raw_img in raw_images:
+                    chain_comps.append(self._make_image_comp(raw_img))
+                await self.context.send_message(umo, MessageChain(chain_comps))
+                return
+
             if send_mode == "single_chain":
                 chain_comps = [self._make_image_comp(rendered_card_path)]
                 for raw_img in raw_images:
@@ -1502,20 +2276,43 @@ class TwitterRssPlugin(Star):
                 if not umo or not accounts:
                     continue
 
-                for account in accounts:
+                for account in list(accounts):
                     if account not in account_tweets_cache:
                         fetched_list = await self._fetch_account_tweets(account)
                         account_tweets_cache[account] = fetched_list
                         stats["fetched"] += len(fetched_list)
                     tweets = account_tweets_cache[account]
                     if not tweets:
+                        if account.strip().lstrip("@").lower() in self._not_found_accounts:
+                            self._auto_remove_invalid_account(account, target_rule=rule)
+                            stats.setdefault("removed_accounts", []).append(account)
+                            try:
+                                await self.context.send_message(
+                                    umo,
+                                    MessageChain(
+                                        [
+                                            Comp.Plain(
+                                                f"🗑️ [TwitterRSS] 检测到本群订阅的推特 ID @{account} 不存在或已注销，已自动从本群订阅列表中移除。"
+                                            )
+                                        ]
+                                    ),
+                                )
+                            except Exception as e:
+                                logger.warning(f"[TwitterRSS] 发送自动移除无效账号通知失败: {e}")
                         continue
 
                     state_key = f"{umo}::{account}"
                     acct_seen = set(seen_map.get(state_key, []))
                     is_first_init = state_key not in init_keys
 
-                    new_tweets = [t for t in tweets if t["id"] not in acct_seen]
+                    new_tweets = [
+                        t
+                        for t in tweets
+                        if t["id"] not in acct_seen and not self._should_skip_tweet(t, rule)
+                    ]
+                    for skipped_t in tweets:
+                        if skipped_t["id"] not in acct_seen and self._should_skip_tweet(skipped_t, rule):
+                            acct_seen.add(skipped_t["id"])
                     if not new_tweets:
                         if is_first_init:
                             init_keys.append(state_key)
@@ -1580,12 +2377,13 @@ class TwitterRssPlugin(Star):
             else:
                 accounts = self._get_rule_accounts(group_rule)
 
-            stats = {
+            stats: dict[str, Any] = {
                 "accounts": len(accounts),
                 "fetched": 0,
                 "evaluated": 0,
                 "pushed": 0,
                 "filtered": 0,
+                "removed_accounts": [],
             }
             if not accounts or not umo:
                 return stats
@@ -1593,13 +2391,19 @@ class TwitterRssPlugin(Star):
             seen_map: dict[str, list[str]] = self.state.setdefault("seen_ids", {})
             existing_hist_map = {h["id"]: h for h in self.history_tweets}
 
-            for account in accounts:
+            for account in list(accounts):
                 tweets = await self._fetch_account_tweets(account)
                 stats["fetched"] += len(tweets)
                 if not tweets:
+                    if account.strip().lstrip("@").lower() in self._not_found_accounts:
+                        self._auto_remove_invalid_account(account, target_rule=group_rule)
+                        stats["removed_accounts"].append(account)
                     continue
 
-                past_tweets = tweets[-limit_per_account:]
+                valid_tweets = [
+                    t for t in tweets if not self._should_skip_tweet(t, group_rule)
+                ]
+                past_tweets = valid_tweets[-limit_per_account:]
                 state_key = f"{umo}::{account}"
                 acct_seen = set(seen_map.get(state_key, []))
 
@@ -1675,10 +2479,15 @@ class TwitterRssPlugin(Star):
             if not recent_tweets:
                 continue
 
-            recent_slice = recent_tweets[-40:]
+            # 将过去24小时的全部推文（最多取最近100条，不再只截断40条）交给 AI 自主筛选
+            pool_limit = max(100, max_items * 4)
+            recent_slice = recent_tweets[-pool_limit:]
+
             candidates_lines: list[str] = []
             for idx, t in enumerate(recent_slice):
                 text_snippet = (t.get("text") or "").replace("\n", " ").strip()[:240]
+                if not text_snippet:
+                    text_snippet = "（无文字配文，仅发布了插画图片）" if t.get("images") else "（无文字内容）"
                 trans_hint = (t.get("ai_summary") or "").replace("\n", " ").strip()[:120]
                 has_img_tag = "含插画配图" if t.get("images") else "纯文字"
                 line = f"[{idx}] @{t.get('username')} ({t.get('author_name')}, {t.get('pub_date')}, {has_img_tag}): {text_snippet}"
@@ -1687,16 +2496,19 @@ class TwitterRssPlugin(Star):
                 candidates_lines.append(line)
 
             system_prompt = (
-                "你是一位干练、克制的新闻简报编辑。请根据过去24小时的推文素材，提炼出简明扼要的《今日要闻》条目，严格输出 JSON 格式。"
+                "你是一位干练、克制的新闻简报主编。请根据过去24小时的推文素材，自主判断并筛选出真正具备新闻/资讯/作品发布价值的《今日要闻》条目，严格输出 JSON 格式。"
             )
             prompt = (
                 f"【编辑要求】\n{digest_prompt_cfg}\n"
-                f"最多精选 {max_items} 条重点推文动态。\n\n"
+                f"【条数上限与自主精选规则】\n"
+                f"- 本期要闻的条数上限为 **{max_items} 条**（最多不超过 {max_items} 条）。\n"
+                f"- 请由你自主评估下方每一条候选推文是否算作值得报道的“要闻”（例如：新作/新曲发布、角色设计公开、活动/演出预告、联动周边发售、众筹/企划进展、重要动态更新等算作要闻；单纯早安晚安寒暄、无实质内容的闲聊水帖不算要闻）。\n"
+                f"- **宁缺毋滥、实事求是**：在不超过 {max_items} 条上限的前提下，你认为有几条真正算新闻，就输出几条（例如若只有 5 条算新闻就只输出 5 条；若有 14 条算新闻就输出 14 条，不要为了凑满上限而塞入水帖，也不要固定停在 8 条）。\n\n"
                 "【撰写铁律（必须严格执行）】\n"
                 "1. 新闻简讯口吻：title（8~18字）与 summary（20~50字，1~2句话）均采用客观、洗练的新闻报道口吻，直接陈述作者发布了什么主题的插画、设计或动态，有话则长、无话则短。\n"
                 "2. 严禁出现废话或提及未知信息：绝对禁止输出“无法判断…”、“未进一步说明…”、“未透露…”、“素材未包含…”、“暂不清楚…”、“未提及…”、“无法核验…”等任何关于信息缺失的表述！只陈述推文已有的明确信息。\n"
                 "3. 严禁使用任何 Emoji 表情符号。\n\n"
-                f"【过去24小时推文素材列表】\n" + "\n".join(candidates_lines) + "\n\n"
+                f"【过去24小时推文素材列表（共 {len(recent_slice)} 条）】\n" + "\n".join(candidates_lines) + "\n\n"
                 "请严格返回如下 JSON 格式：\n"
                 "{\n"
                 '  "items": [\n'
@@ -1729,17 +2541,26 @@ class TwitterRssPlugin(Star):
             theme_palette = random.choice(shuffled_palettes)
 
             rendered_items: list[dict[str, Any]] = []
+            used_indices: set[int] = set()
+
             for i, entry in enumerate(raw_items[:max_items]):
-                idx = entry.get("tweet_index", 0)
-                src_tweet = (
-                    recent_slice[idx]
-                    if isinstance(idx, int) and 0 <= idx < len(recent_slice)
-                    else recent_slice[i % len(recent_slice)]
-                )
+                idx = entry.get("tweet_index", -1)
+                if not isinstance(idx, int) or idx < 0 or idx >= len(recent_slice) or idx in used_indices:
+                    continue
+                used_indices.add(idx)
+                src_tweet = recent_slice[idx]
+
                 thumb_src = ""
+                item_palette = shuffled_palettes[len(rendered_items) % len(shuffled_palettes)]
                 if src_tweet.get("images"):
-                    _, b64_uri = await self._download_image_cached(src_tweet["images"][0])
+                    local_img_path, b64_uri = await self._download_image_cached(src_tweet["images"][0])
                     thumb_src = b64_uri or src_tweet["images"][0]
+                    if local_img_path:
+                        item_palette = await asyncio.to_thread(
+                            _extract_macaron_palette_from_image_sync,
+                            local_img_path,
+                            item_palette,
+                        )
 
                 clean_cat = _clean_digest_text(str(entry.get("category") or "资讯速递"), is_summary=False)
                 clean_title = _clean_digest_text(
@@ -1747,7 +2568,7 @@ class TwitterRssPlugin(Star):
                     is_summary=False,
                 )
                 clean_summary = _clean_digest_text(
-                    str(entry.get("summary") or src_tweet.get("ai_summary") or src_tweet.get("text") or ""),
+                    str(entry.get("summary") or src_tweet.get("ai_summary") or src_tweet.get("text") or "发布了最新作品动态。"),
                     is_summary=True,
                 )
 
@@ -1760,16 +2581,23 @@ class TwitterRssPlugin(Star):
                         "title": clean_title,
                         "summary": clean_summary,
                         "thumb_src": thumb_src,
-                        "palette": shuffled_palettes[i % len(shuffled_palettes)],
+                        "palette": item_palette,
                     }
                 )
 
             if not rendered_items:
                 for i, src_tweet in enumerate(reversed(recent_slice[-max_items:])):
                     thumb_src = ""
+                    item_palette = shuffled_palettes[i % len(shuffled_palettes)]
                     if src_tweet.get("images"):
-                        _, b64_uri = await self._download_image_cached(src_tweet["images"][0])
+                        local_img_path, b64_uri = await self._download_image_cached(src_tweet["images"][0])
                         thumb_src = b64_uri or src_tweet["images"][0]
+                        if local_img_path:
+                            item_palette = await asyncio.to_thread(
+                                _extract_macaron_palette_from_image_sync,
+                                local_img_path,
+                                item_palette,
+                            )
                     fallback_text = _clean_digest_text(
                         src_tweet.get("ai_summary") or src_tweet.get("text") or "发布了全新插画作品动态。",
                         is_summary=True,
@@ -1783,16 +2611,23 @@ class TwitterRssPlugin(Star):
                             "title": f"@{src_tweet.get('username')} 发布最新动态",
                             "summary": fallback_text,
                             "thumb_src": thumb_src,
-                            "palette": shuffled_palettes[i % len(shuffled_palettes)],
+                            "palette": item_palette,
                         }
                     )
+
+            # 综合下方所有新闻词条的颜色进行色相环聚类与向量合成，取出最契合整期所有词条的全局主题配色
+            lead_palette, mid_palette, end_palette = _compute_harmonious_digest_theme(
+                rendered_items, theme_palette
+            )
 
             now = datetime.datetime.now()
             render_data = {
                 "date_str": now.strftime("%Y.%m.%d"),
                 "total_count": len(recent_tweets),
                 "account_count": len(group_accts),
-                "theme": theme_palette,
+                "theme": lead_palette,
+                "theme_mid": mid_palette,
+                "theme_end": end_palette,
                 "items": rendered_items,
             }
 
@@ -1862,9 +2697,19 @@ class TwitterRssPlugin(Star):
         accounts.append(acct)
         rule["twitter_accounts"] = accounts
         self._save_plugin_config()
+
+        # 立即核验该推特 ID 是否存在，若不存在则自动移除
+        await self._fetch_account_tweets(acct)
+        if acct.lower() in self._not_found_accounts:
+            self._auto_remove_invalid_account(acct, target_rule=rule)
+            yield event.plain_result(
+                f"🗑️ 检测到推特 ID @{acct} 不存在或已注销，已自动从当前群聊【{rule.get('group_name')}】订阅列表中移除。"
+            )
+            return
+
         yield event.plain_result(
             f"✅ 已为当前群聊【{rule.get('group_name')}】添加推特订阅: @{acct}\n"
-            f"本群当前订阅数: {len(accounts)} 个"
+            f"本群当前订阅数: {len(self._get_rule_accounts(rule))} 个"
         )
 
     @tw.command("del")
@@ -2021,8 +2866,14 @@ class TwitterRssPlugin(Star):
             f"🔄 正在按本群【{rule.get('group_name')}】独立规则检查 {len(accounts)} 个推特账号的新推文，请稍候..."
         )
         stats = await self.check_all_accounts(manual=True, target_rule=rule)
+        removed_list = stats.get("removed_accounts") or []
+        removed_tip = (
+            f"\n🗑️ 已自动移除不存在的推特 ID: {', '.join('@' + a for a in removed_list)}"
+            if removed_list
+            else ""
+        )
         yield event.plain_result(
-            f"✅ 本群检查完成！共拉取 {stats['fetched']} 条推文，发现 {stats['new']} 条新推文，通过本群规则筛选并推送 {stats['pushed']} 条。"
+            f"✅ 本群检查完成！共拉取 {stats['fetched']} 条推文，发现 {stats['new']} 条新推文，通过本群规则筛选并推送 {stats['pushed']} 条。{removed_tip}"
         )
 
     @tw.command("test")
@@ -2049,7 +2900,18 @@ class TwitterRssPlugin(Star):
             limit_per_account=limit,
             target_account=target_acct,
         )
+        removed_list = stats.get("removed_accounts") or []
+        removed_tip = (
+            f"\n• 🗑️ 自动移除不存在的 ID: {', '.join('@' + a for a in removed_list)}"
+            if removed_list
+            else ""
+        )
         if stats["fetched"] == 0:
+            if removed_list:
+                yield event.plain_result(
+                    f"🗑️ 检测到以下推特 ID 不存在，已自动从本群【{rule.get('group_name')}】订阅列表中移除：{', '.join('@' + a for a in removed_list)}"
+                )
+                return
             yield event.plain_result(
                 "⚠️ 未能从任何订阅源获取到推文。如果您处于国内网络环境，请在插件配置的 `http_proxy` 项填入本地代理地址（例如 `http://127.0.0.1:7890`）后重试。"
             )
@@ -2060,7 +2922,7 @@ class TwitterRssPlugin(Star):
             f"• 检查账号数: {stats['accounts']} 个\n"
             f"• 获取并评估历史推文: {stats['evaluated']} 条（每个账号最多取过去 {limit} 条）\n"
             f"• 通过本群规则并渲染推送: {stats['pushed']} 条\n"
-            f"• 未通过本群规则被拦截: {stats['filtered']} 条"
+            f"• 未通过本群规则被拦截: {stats['filtered']} 条{removed_tip}"
         )
 
     @tw.command("digest")

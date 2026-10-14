@@ -21,11 +21,49 @@
     background: #ffffff;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
     color: #0f172a;
+    -webkit-font-smoothing: antialiased;
   }
   .card {
     width: 100%;
     background: #ffffff;
     padding: 28px 32px;
+  }
+  .retweet-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-left: 8px;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #059669;
+  }
+  .retweet-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.12);
+    color: #059669;
+    font-size: 13px;
+    font-weight: 900;
+  }
+  .retweet-mini-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #10b981;
+    flex-shrink: 0;
+    border: 1px solid #d1fae5;
+  }
+  .retweet-mini-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
   .header {
     display: flex;
@@ -177,10 +215,82 @@
     object-fit: cover;
     display: block;
   }
+  /* 引用转发 (Quote Tweet) 嵌套卡片样式 */
+  .quote-card {
+    margin-top: 14px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 16px;
+    background: #f8fafc;
+    padding: 16px 18px;
+    overflow: hidden;
+  }
+  .quote-header {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-bottom: 8px;
+  }
+  .quote-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #1d9bf0;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .quote-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .quote-author-name {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .quote-author-handle {
+    font-size: 13.5px;
+    font-weight: 500;
+    color: #64748b;
+  }
+  .quote-body {
+    font-size: 15.5px;
+    line-height: 1.58;
+    color: #1e293b;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .quote-tags {
+    margin-top: 4px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: #1d9bf0;
+    font-weight: 500;
+    word-break: break-word;
+  }
 </style>
 </head>
 <body>
   <div class="card" id="tweet-card">
+    {% if is_retweet and retweeter_username %}
+    <div class="retweet-banner">
+      <span class="retweet-icon">↻</span>
+      {% if retweeter_avatar_src %}
+      <span class="retweet-mini-avatar">
+        <img src="{{ retweeter_avatar_src }}" onerror="this.parentNode.style.display='none';" />
+      </span>
+      {% endif %}
+      <span>{{ retweeter_name }} (@{{ retweeter_username }}) 已转推</span>
+    </div>
+    {% endif %}
+
     <div class="header">
       <div class="author-box">
         <div class="avatar">
@@ -219,6 +329,37 @@
       {% endif %}
       {% if translated_tags %}
       <div class="trans-tags">{{ translated_tags|join(' ') }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if quote_info %}
+    <div class="quote-card">
+      <div class="quote-header">
+        <div class="quote-avatar">
+          {% if quote_info.avatar_src %}
+          <img src="{{ quote_info.avatar_src }}" onerror="this.style.display='none';this.parentNode.innerText='{{ quote_info.author_initial }}';" />
+          {% else %}
+          {{ quote_info.author_initial }}
+          {% endif %}
+        </div>
+        <span class="quote-author-name">{{ quote_info.author_name }}</span>
+        <span class="quote-author-handle">@{{ quote_info.username }}</span>
+      </div>
+      {% if quote_info.orig_body %}
+      <div class="quote-body">{{ quote_info.orig_body }}</div>
+      {% endif %}
+      {% if quote_info.orig_tags %}
+      <div class="quote-tags">{{ quote_info.orig_tags|join(' ') }}</div>
+      {% endif %}
+      {% if quote_info.display_images %}
+      <div class="media-grid count-{{ quote_info.display_images|length if quote_info.display_images|length <= 4 else 4 }}">
+        {% for img_src in quote_info.display_images[:4] %}
+        <div class="media-item">
+          <img src="{{ img_src }}" onerror="this.parentNode.style.display='none';" />
+        </div>
+        {% endfor %}
+      </div>
       {% endif %}
     </div>
     {% endif %}

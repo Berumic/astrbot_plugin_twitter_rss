@@ -161,14 +161,14 @@
     "default": 8,
     "slider": {
       "min": 3,
-      "max": 20,
+      "max": 30,
       "step": 1
     }
   },
   "daily_digest_prompt": {
     "description": "每日24小时新闻精选整理提示词",
     "type": "text",
-    "default": "请从过去24小时收集到的推文中，筛选出最重要、最有价值或最受关注的动态，去重并归纳为一期《Twitter 24小时精选新闻简报》。请为整期简报拟定一个醒目的头条标题与100字以内的今日总览，并为每条入选推文提炼中文标题、所属分类标签、核心内容摘要（60~120字）以及看点点评。"
+    "default": "请从过去24小时收集到的推文中筛选出重要动态，整理为《今日要闻》简讯。请用客观、干练的新闻快讯口吻（每条1~2句话，20~50字），直接陈述作者发布了什么主题的插画、角色设计或作品动态，有话则长、无话则短。严禁使用任何 Emoji，严禁输出“无法判断”、“未进一步说明”、“素材未包含”、“未透露”等任何关于未知或缺失信息的废话。"
   },
   "rss_base_url": {
     "description": "首选推特订阅源路由模板",
@@ -189,7 +189,7 @@
   "skip_retweets": {
     "description": "跳过纯转推 (RT)",
     "type": "bool",
-    "default": false
+    "default": true
   },
   "skip_replies": {
     "description": "跳过纯回复推文",
@@ -201,5 +201,17 @@
     "type": "string",
     "default": "",
     "hint": "拉取推特订阅源或下载 pbs.twimg.com 原图需要代理时填写（例如 http://127.0.0.1:7890）。留空则直连。"
+  },
+  "enable_merge_forward_over_3": {
+    "description": "当图片总数超过阈值时使用合并转发/合并消息发送",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后，当推文包含多张图片（渲染卡片+原图总数超过阈值，默认超过3张）时，自动打包为群合并转发消息（OneBot v11 支持合并转发，QQ官方接口自动回退为单条多图消息链合并发送）。"
+  },
+  "merge_forward_image_threshold": {
+    "description": "触发合并转发的图片数量阈值",
+    "type": "int",
+    "default": 3,
+    "hint": "默认 3：当（渲染推文卡片 + 原图）总图片数 > 3（即原图 ≥ 3 张）时触发合并转发。"
   }
 }
