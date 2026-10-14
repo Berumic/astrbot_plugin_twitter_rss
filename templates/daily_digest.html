@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  html {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #fefefe;
+  }
+  body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    color: #181e29;
+    -webkit-font-smoothing: antialiased;
+  }
+  .digest-page {
+    width: 100%;
+    background: linear-gradient(
+      160deg,
+      rgba(var(--theme-rgb, 245, 242, 255), 0.65) 0%,
+      #ffffff 42%,
+      rgba(var(--theme-soft-rgb, 239, 247, 255), 0.55) 100%
+    );
+    padding: 34px 36px 38px 36px;
+    position: relative;
+    overflow: hidden;
+  }
+  .page-deco-circle {
+    position: absolute;
+    top: -90px;
+    right: -70px;
+    width: 260px;
+    height: 260px;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      rgba(var(--theme-accent-rgb, 124, 58, 237), 0.10) 0%,
+      rgba(var(--theme-accent-rgb, 124, 58, 237), 0) 70%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+  .digest-header {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+  }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .header-accent-bar {
+    width: 8px;
+    height: 46px;
+    border-radius: 99px;
+    background: var(--theme-accent, #7c3aed);
+    box-shadow: 0 4px 14px rgba(var(--theme-accent-rgb, 124, 58, 237), 0.30);
+    flex-shrink: 0;
+  }
+  .header-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .header-title {
+    font-size: 32px;
+    font-weight: 900;
+    color: #141923;
+    letter-spacing: 1.5px;
+    line-height: 1.1;
+  }
+  .header-sub {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 2.4px;
+    text-transform: uppercase;
+    color: var(--theme-accent, #7c3aed);
+    opacity: 0.88;
+  }
+  .header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 7px;
+  }
+  .date-badge {
+    background: rgba(var(--theme-rgb, 245, 242, 255), 0.95);
+    color: var(--theme-accent, #7c3aed);
+    border: 1px solid var(--theme-border, #ddd6fe);
+    padding: 5px 14px;
+    border-radius: 99px;
+    font-size: 12.5px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+  }
+  .stats-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+  }
+  .stats-row strong {
+    color: #1e293b;
+    font-weight: 800;
+  }
+  .stats-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--theme-accent, #7c3aed);
+    opacity: 0.45;
+  }
+  .header-divider {
+    position: relative;
+    z-index: 2;
+    height: 2px;
+    margin: 20px 0 24px 0;
+    border-radius: 99px;
+    background: linear-gradient(
+      90deg,
+      var(--theme-accent, #7c3aed) 0%,
+      var(--theme-border, #ddd6fe) 38%,
+      rgba(226, 232, 240, 0.35) 100%
+    );
+  }
+  .digest-list {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .news-card {
+    position: relative;
+    width: 100%;
+    border-radius: 22px;
+    overflow: hidden;
+    background: linear-gradient(
+      135deg,
+      rgb(var(--card-rgb)) 0%,
+      rgb(var(--card-soft-rgb)) 100%
+    );
+    border: 1.5px solid var(--card-border);
+    box-shadow:
+      0 10px 26px -10px rgba(var(--accent-rgb), 0.14),
+      inset 0 1px 0 rgba(255, 255, 255, 0.88);
+    display: flex;
+    align-items: stretch;
+  }
+  .news-card.has-image {
+    min-height: 178px;
+  }
+  .news-card.no-image {
+    min-height: 136px;
+  }
+  .card-accent-strip {
+    width: 6px;
+    background: var(--accent);
+    flex-shrink: 0;
+    z-index: 3;
+  }
+  .card-body {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .news-card.has-image .card-body {
+    width: 64%;
+    padding: 22px 18px 22px 22px;
+  }
+  .news-card.no-image .card-body {
+    width: 100%;
+    padding: 22px 28px 22px 22px;
+  }
+  .card-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 9px;
+  }
+  .card-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 99px;
+    background: var(--accent);
+    color: #ffffff;
+    font-size: 11.5px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.25);
+  }
+  .card-cat {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 10px;
+    border-radius: 99px;
+    background: var(--tag-bg);
+    color: var(--accent);
+    border: 1px solid rgba(var(--accent-rgb), 0.22);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .card-author {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #334155;
+  }
+  .card-time {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #64748b;
+  }
+  .card-title {
+    font-size: 19px;
+    font-weight: 850;
+    color: #141923;
+    line-height: 1.38;
+    margin-bottom: 7px;
+    letter-spacing: 0.2px;
+    text-shadow: 0 1px 10px rgba(var(--card-rgb), 0.95);
+  }
+  .card-summary {
+    font-size: 14.5px;
+    font-weight: 500;
+    color: #334155;
+    line-height: 1.66;
+    word-break: break-word;
+    text-shadow: 0 1px 8px rgba(var(--card-rgb), 0.95);
+  }
+  .card-artwork {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 58%;
+    z-index: 1;
+    overflow: hidden;
+  }
+  .card-artwork img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 20%;
+    display: block;
+  }
+  .card-artwork-fade {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background:
+      linear-gradient(
+        90deg,
+        rgba(var(--card-rgb), 1) 0%,
+        rgba(var(--card-rgb), 0.99) 14%,
+        rgba(var(--card-rgb), 0.92) 28%,
+        rgba(var(--card-rgb), 0.68) 46%,
+        rgba(var(--card-rgb), 0.26) 68%,
+        rgba(var(--card-rgb), 0.04) 86%,
+        rgba(var(--card-rgb), 0) 100%
+      ),
+      linear-gradient(
+        180deg,
+        rgba(var(--card-rgb), 0.14) 0%,
+        rgba(var(--card-rgb), 0) 22%,
+        rgba(var(--card-rgb), 0) 78%,
+        rgba(var(--card-rgb), 0.18) 100%
+      );
+  }
+  .card-watermark-num {
+    position: absolute;
+    right: 22px;
+    bottom: -10px;
+    font-size: 76px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -2px;
+    color: rgba(var(--accent-rgb), 0.07);
+    pointer-events: none;
+    z-index: 1;
+    user-select: none;
+  }
+</style>
+</head>
+<body>
+  <div
+    class="digest-page"
+    style="
+      --theme-rgb: {{ theme.card_rgb }};
+      --theme-soft-rgb: {{ theme.card_soft_rgb }};
+      --theme-border: {{ theme.card_border }};
+      --theme-accent: {{ theme.accent }};
+      --theme-accent-rgb: {{ theme.accent_rgb }};
+    "
+  >
+    <div class="page-deco-circle"></div>
+
+    <div class="digest-header">
+      <div class="header-left">
+        <div class="header-accent-bar"></div>
+        <div class="header-title-wrap">
+          <div class="header-title">今日要闻</div>
+          <div class="header-sub">DAILY CURATED BRIEFING</div>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="date-badge">{{ date_str }}</div>
+        <div class="stats-row">
+          <span>24H 收录 <strong>{{ total_count }}</strong></span>
+          <span class="stats-dot"></span>
+          <span>精选 <strong>{{ items|length }}</strong></span>
+          <span class="stats-dot"></span>
+          <span>订阅 <strong>{{ account_count }}</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-divider"></div>
+
+    <div class="digest-list">
+      {% for item in items %}
+      <div
+        class="news-card {% if item.thumb_src %}has-image{% else %}no-image{% endif %}"
+        style="
+          --card-rgb: {{ item.palette.card_rgb }};
+          --card-soft-rgb: {{ item.palette.card_soft_rgb }};
+          --card-border: {{ item.palette.card_border }};
+          --accent: {{ item.palette.accent }};
+          --accent-rgb: {{ item.palette.accent_rgb }};
+          --tag-bg: {{ item.palette.tag_bg }};
+        "
+      >
+        <div class="card-accent-strip"></div>
+
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="card-num">{{ "%02d"|format(loop.index) }}</span>
+            <span class="card-cat">{{ item.category or "资讯速递" }}</span>
+            <span class="card-author">@{{ item.username }}{% if item.author_name and item.author_name != item.username %} · {{ item.author_name }}{% endif %}</span>
+            {% if item.pub_date %}
+            <span class="card-time">{{ item.pub_date }}</span>
+            {% endif %}
+          </div>
+          <div class="card-title">{{ item.title }}</div>
+          <div class="card-summary">{{ item.summary }}</div>
+        </div>
+
+        {% if item.thumb_src %}
+        <div class="card-artwork">
+          <img src="{{ item.thumb_src }}" onerror="this.parentNode.style.display='none';" />
+          <div class="card-artwork-fade"></div>
+        </div>
+        {% else %}
+        <div class="card-watermark-num">{{ "%02d"|format(loop.index) }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</body>
+</html>

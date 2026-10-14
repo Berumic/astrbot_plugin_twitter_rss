@@ -1,0 +1,205 @@
+{
+  "group_subscriptions": {
+    "type": "template_list",
+    "description": "按群聊分类独立设置（订阅账号与标签过滤）",
+    "hint": "点击添加可为每个群聊（或会话）独立设置订阅的推特账号、必须包含标签、其他任意标签与排除标签。也可直接在目标群聊中发送 /tw sub 与 /tw add 等指令自动创建和管理本群独立配置！",
+    "obvious_hint": true,
+    "default": [],
+    "templates": {
+      "group_rule": {
+        "name": "群聊独立订阅与标签配置",
+        "hint": "为单个群聊独立配置订阅账号和图片/文本过滤规则",
+        "display_item": "group_name",
+        "hide_hint_in_list": true,
+        "items": {
+          "group_name": {
+            "description": "群聊备注名称",
+            "type": "string",
+            "default": "未命名群聊",
+            "hint": "方便在配置列表中区分不同群聊的名称（例如：插画一群、资讯二群）。"
+          },
+          "target_umo": {
+            "description": "群聊会话 ID (unified_msg_origin 或纯数字群号)",
+            "type": "string",
+            "default": "",
+            "hint": "在目标群聊中发送 /tw sub 即可自动绑定！也可手动填写完整会话 ID（如 aiocqhttp:GroupMessage:123456789）或直接填 QQ 群号（如 123456789）。"
+          },
+          "twitter_accounts": {
+            "description": "本群订阅的推特账号列表",
+            "type": "list",
+            "default": [],
+            "hint": "本群独立订阅的推特用户名（无需带 @，如 rasra25、tyrant_madoromi、dayoon292）。"
+          },
+          "enable_vision_tag_filter": {
+            "description": "启用本群图片视觉标签过滤",
+            "type": "bool",
+            "default": true,
+            "hint": "开启后，本群订阅的含图推文将按下方设置的本群专属标签规则进行过滤。"
+          },
+          "must_include_image_tags": {
+            "description": "本群图片【必须包含】标签列表（全部命中才通过）",
+            "type": "list",
+            "default": [
+              "二次元"
+            ],
+            "hint": "图片必须【同时包含】此列表中的所有标签才允许推送到本群（留空则不限制）。"
+          },
+          "any_include_image_tags": {
+            "description": "本群图片【其他任意】标签列表（匹配到一条即通过）",
+            "type": "list",
+            "default": [
+              "插画",
+              "美少女",
+              "萝莉",
+              "立绘",
+              "动漫角色"
+            ],
+            "hint": "在满足必须包含标签的前提下，图片只需【匹配到此列表中的任意一条】标签即通过（留空则不限制）。"
+          },
+          "exclude_image_tags": {
+            "description": "本群图片【禁止包含】标签列表（命中任一即拦截）",
+            "type": "list",
+            "default": [
+              "NSFW",
+              "血腥暴力",
+              "广告二维码",
+              "纯文字聊天截图"
+            ],
+            "hint": "只要视觉模型识别到图片包含此列表中任意一个标签，则不对本群推送。"
+          },
+          "enable_text_ai_filter": {
+            "description": "启用本群 AI 文本价值判断",
+            "type": "bool",
+            "default": true,
+            "hint": "开启后，对纯文本推文（或未开启图片直接放行时）调用文本模型判断是否值得推送到本群。"
+          },
+          "text_filter_prompt": {
+            "description": "本群推文价值判断提示词",
+            "type": "text",
+            "default": "请判断这条推文是否值得推送：重要动态、有趣创作、高质量作品分享值得推送；纯广告、无意义水帖不值得推送。",
+            "hint": "本群专属的文本推文筛选标准。"
+          },
+          "enable_daily_digest": {
+            "description": "向本群推送每日24小时精选新闻长图",
+            "type": "bool",
+            "default": true,
+            "hint": "开启后，每天在全局设定时间点将本群订阅账号过去24小时的推文整理为精选新闻长图推送到本群。"
+          }
+        }
+      }
+    }
+  },
+  "text_provider_id": {
+    "description": "文本判断与翻译模型提供商",
+    "type": "string",
+    "default": "",
+    "hint": "手动选择用于推文正文/标签翻译、文本价值判断及每日24小时新闻简报的大模型提供商。留空则使用默认对话模型。",
+    "_special": "select_provider"
+  },
+  "vision_provider_id": {
+    "description": "图片标签识别视觉模型提供商",
+    "type": "string",
+    "default": "",
+    "hint": "手动选择用于识别推文图片标签的多模态视觉模型提供商。留空则使用默认对话模型。",
+    "_special": "select_provider"
+  },
+  "image_tweet_bypass_text_filter": {
+    "description": "图片推文通过视觉筛选后直接推送（无需再过文本淘汰）",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后，只要图片通过了目标群聊的【必须包含/其他任意/排除标签】视觉判定即直接推送到该群。"
+  },
+  "poll_interval_minutes": {
+    "description": "获取新推文轮询间隔（分钟）",
+    "type": "int",
+    "default": 15,
+    "hint": "每隔多少分钟拉取一次各群订阅账号的新推文。",
+    "slider": {
+      "min": 2,
+      "max": 180,
+      "step": 1
+    }
+  },
+  "test_push_tweet_count": {
+    "description": "测试推送获取每个账号的历史推文条数",
+    "type": "int",
+    "default": 3,
+    "hint": "执行 /tw test 测试推送时，获取每个订阅账号过去的多少条推文进行筛选与渲染推送（默认 3 条）。",
+    "obvious_hint": true,
+    "slider": {
+      "min": 1,
+      "max": 20,
+      "step": 1
+    }
+  },
+  "push_send_mode": {
+    "description": "推文渲染图 + 原图单独发送模式",
+    "type": "string",
+    "default": "separate_messages",
+    "options": [
+      "separate_messages",
+      "single_chain"
+    ],
+    "hint": "separate_messages：先发送渲染好的推文卡片图片，随后单独发送推文内的原始图片；single_chain：在一条消息中依次发送渲染卡片图与各张原图。"
+  },
+  "enable_daily_digest": {
+    "description": "启用每日24小时精选新闻定时推送（总开关）",
+    "type": "bool",
+    "default": true,
+    "hint": "每天在设定时间点自动按各群订阅汇总过去24小时推文，渲染为新闻简报长图推送。"
+  },
+  "daily_digest_time": {
+    "description": "每日24小时新闻推送时间点 (HH:MM)",
+    "type": "string",
+    "default": "08:30",
+    "hint": "24小时制时间，例如 08:30 或 21:00，按机器本地时区每日定时触发。",
+    "obvious_hint": true
+  },
+  "daily_digest_max_items": {
+    "description": "每日新闻简报精选条数上限",
+    "type": "int",
+    "default": 8,
+    "slider": {
+      "min": 3,
+      "max": 20,
+      "step": 1
+    }
+  },
+  "daily_digest_prompt": {
+    "description": "每日24小时新闻精选整理提示词",
+    "type": "text",
+    "default": "请从过去24小时收集到的推文中，筛选出最重要、最有价值或最受关注的动态，去重并归纳为一期《Twitter 24小时精选新闻简报》。请为整期简报拟定一个醒目的头条标题与100字以内的今日总览，并为每条入选推文提炼中文标题、所属分类标签、核心内容摘要（60~120字）以及看点点评。"
+  },
+  "rss_base_url": {
+    "description": "首选推特订阅源路由模板",
+    "type": "string",
+    "default": "https://fxtwitter.com/{username}/feed.xml",
+    "hint": "默认使用免配置的 https://fxtwitter.com/{username}/feed.xml，也可填自建 RSSHub 地址。"
+  },
+  "enable_multi_source_fallback": {
+    "description": "启用多订阅源自动容灾回退",
+    "type": "bool",
+    "default": true
+  },
+  "first_run_mark_seen": {
+    "description": "首次添加账号时仅记录历史推文不刷屏推送",
+    "type": "bool",
+    "default": true
+  },
+  "skip_retweets": {
+    "description": "跳过纯转推 (RT)",
+    "type": "bool",
+    "default": false
+  },
+  "skip_replies": {
+    "description": "跳过纯回复推文",
+    "type": "bool",
+    "default": true
+  },
+  "http_proxy": {
+    "description": "HTTP/HTTPS 代理地址（可选）",
+    "type": "string",
+    "default": "",
+    "hint": "拉取推特订阅源或下载 pbs.twimg.com 原图需要代理时填写（例如 http://127.0.0.1:7890）。留空则直连。"
+  }
+}

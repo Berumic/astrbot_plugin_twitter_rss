@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  html {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #fefefe;
+  }
+  body {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    color: #0f172a;
+  }
+  .card {
+    width: 100%;
+    background: #ffffff;
+    padding: 28px 32px;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .author-box {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #1d9bf0;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+    overflow: hidden;
+    flex-shrink: 0;
+    border: 1px solid #e2e8f0;
+  }
+  .avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .author-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .author-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .author-name {
+    font-size: 19px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .verified-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #1d9bf0;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 900;
+  }
+  .author-sub {
+    font-size: 14px;
+    color: #64748b;
+    font-weight: 500;
+  }
+  .brand-logo {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: #0f172a;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    font-weight: 900;
+  }
+  .tweet-section {
+    margin-bottom: 12px;
+  }
+  .tweet-body {
+    font-size: 18px;
+    line-height: 1.65;
+    color: #0f172a;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .tweet-tags {
+    margin-top: 4px;
+    font-size: 17px;
+    line-height: 1.6;
+    color: #1d9bf0;
+    font-weight: 500;
+    word-break: break-word;
+  }
+  .trans-section {
+    margin-top: 8px;
+    margin-bottom: 14px;
+    padding-top: 10px;
+    border-top: 1px solid #f1f5f9;
+  }
+  .trans-body {
+    font-size: 16.5px;
+    line-height: 1.65;
+    color: #334155;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .trans-tags {
+    margin-top: 4px;
+    font-size: 16.5px;
+    line-height: 1.6;
+    color: #1d9bf0;
+    font-weight: 500;
+    word-break: break-word;
+  }
+  .media-grid {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .media-grid.count-1 {
+    grid-template-columns: 1fr;
+  }
+  .media-grid.count-2, .media-grid.count-3, .media-grid.count-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .media-item {
+    width: 100%;
+    overflow: hidden;
+    background: #f8fafc;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .media-grid.count-1 .media-item img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .media-grid.count-2 .media-item img,
+  .media-grid.count-3 .media-item img,
+  .media-grid.count-4 .media-item img {
+    width: 100%;
+    height: 320px;
+    object-fit: cover;
+    display: block;
+  }
+</style>
+</head>
+<body>
+  <div class="card" id="tweet-card">
+    <div class="header">
+      <div class="author-box">
+        <div class="avatar">
+          {% if avatar_src %}
+          <img src="{{ avatar_src }}" onerror="this.style.display='none';this.parentNode.innerText='{{ author_initial }}';" />
+          {% else %}
+          {{ author_initial }}
+          {% endif %}
+        </div>
+        <div class="author-meta">
+          <div class="author-name-row">
+            <span class="author-name">{{ author_name }}</span>
+            <span class="verified-badge">✓</span>
+          </div>
+          <span class="author-sub">@{{ username }}{% if pub_date %} · {{ pub_date }}{% endif %}</span>
+        </div>
+      </div>
+      <div class="brand-logo">𝕏</div>
+    </div>
+
+    {% if orig_body or orig_tags %}
+    <div class="tweet-section">
+      {% if orig_body %}
+      <div class="tweet-body">{{ orig_body }}</div>
+      {% endif %}
+      {% if orig_tags %}
+      <div class="tweet-tags">{{ orig_tags|join(' ') }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if translated_body or translated_tags %}
+    <div class="trans-section">
+      {% if orig_body and translated_body %}
+      <div class="trans-body">{{ translated_body }}</div>
+      {% endif %}
+      {% if translated_tags %}
+      <div class="trans-tags">{{ translated_tags|join(' ') }}</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if display_images %}
+    <div class="media-grid count-{{ display_images|length if display_images|length <= 4 else 4 }}">
+      {% for img_src in display_images[:4] %}
+      <div class="media-item">
+        <img src="{{ img_src }}" onerror="this.parentNode.style.display='none';" />
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>
