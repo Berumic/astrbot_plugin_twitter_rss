@@ -213,5 +213,11 @@
     "type": "int",
     "default": 3,
     "hint": "默认 3：当（渲染推文卡片 + 原图）总图片数 > 3（即原图 ≥ 3 张）时触发合并转发。"
+  },
+  "request_interval_seconds": {
+    "description": "多账号抓取请求间隔秒数（防高频限流）",
+    "type": "float",
+    "default": 1.5,
+    "hint": "当订阅账号较多（如 20~50 个）时，每个账号请求之间自动间隔该秒数（外加随机抖动），防止触发 FxTwitter / Cloudflare 高频连接限流或超时。"
   }
 }

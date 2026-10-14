@@ -567,7 +567,8 @@ class TwitterRssPlugin(Star):
         self.http_client = httpx.AsyncClient(
             headers=headers,
             proxy=proxy,
-            timeout=httpx.Timeout(25.0, connect=10.0),
+            timeout=httpx.Timeout(14.0, connect=7.0),
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
             follow_redirects=True,
         )
 
@@ -1146,14 +1147,27 @@ class TwitterRssPlugin(Star):
         candidate_urls = self._get_candidate_urls(account)
         errors: list[str] = []
         explicit_404_hits = 0
+        fx_timed_out = False
 
         for url in candidate_urls:
+            # 若 fxtwitter.com 刚发生连接/读取超时，fixupx.com 同属一个源站，先冷却 1.5 秒再试
+            if fx_timed_out and ("fixupx.com" in url or "api.fxtwitter.com" in url):
+                await asyncio.sleep(1.5)
+
             try:
                 resp = await self.http_client.get(url)
                 final_url = str(resp.url)
                 if "google.com/404" in final_url or "x.com/i/flow/login" in final_url:
                     errors.append(f"{url} -> 重定向至无效页面 ({final_url})")
                     continue
+
+                # 遇到 429 频率限制时，自动退避等待后重试一次
+                if resp.status_code == 429:
+                    retry_after = float(resp.headers.get("Retry-After", "3") or 3)
+                    wait_sec = min(8.0, max(2.0, retry_after))
+                    logger.info(f"[TwitterRSS] 源 {url} 触发 429 限流，退避等待 {wait_sec:.1f}s 后重试...")
+                    await asyncio.sleep(wait_sec)
+                    resp = await self.http_client.get(url)
 
                 if resp.status_code == 404:
                     if any(
@@ -1198,8 +1212,13 @@ class TwitterRssPlugin(Star):
                 if tweets:
                     return tweets
                 errors.append(f"{url} -> 解析到 0 条推文")
+            except httpx.TimeoutException as e:
+                if "fxtwitter.com" in url:
+                    fx_timed_out = True
+                errors.append(f"{url} -> 请求超时 ({type(e).__name__})")
             except Exception as e:
-                errors.append(f"{url} -> {e}")
+                err_detail = str(e).strip() or repr(e)
+                errors.append(f"{url} -> {type(e).__name__}: {err_detail}")
 
         if await self._check_user_not_found_on_twitter(account, explicit_404_hits):
             self._not_found_accounts.add(acct_key)
@@ -2498,8 +2517,11 @@ class TwitterRssPlugin(Star):
                 if not umo or not accounts:
                     continue
 
+                req_delay = max(0.3, float(self.config.get("request_interval_seconds", 1.5) or 1.5))
                 for account in list(accounts):
                     if account not in account_tweets_cache:
+                        if account_tweets_cache:
+                            await asyncio.sleep(req_delay + random.uniform(0.1, 0.7))
                         fetched_list = await self._fetch_account_tweets(account)
                         account_tweets_cache[account] = fetched_list
                         stats["fetched"] += len(fetched_list)
@@ -2613,7 +2635,10 @@ class TwitterRssPlugin(Star):
             seen_map: dict[str, list[str]] = self.state.setdefault("seen_ids", {})
             existing_hist_map = {h["id"]: h for h in self.history_tweets}
 
-            for account in list(accounts):
+            req_delay = max(0.3, float(self.config.get("request_interval_seconds", 1.5) or 1.5))
+            for idx_acct, account in enumerate(list(accounts)):
+                if idx_acct > 0:
+                    await asyncio.sleep(req_delay + random.uniform(0.1, 0.6))
                 tweets = await self._fetch_account_tweets(account)
                 stats["fetched"] += len(tweets)
                 if not tweets:
