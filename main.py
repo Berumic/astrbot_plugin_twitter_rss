@@ -11,6 +11,7 @@ import datetime
 import email.utils
 import hashlib
 import html
+import io
 import json
 import math
 import mimetypes
@@ -1808,38 +1809,96 @@ class TwitterRssPlugin(Star):
         body_cleaned = re.sub(r"\n{3,}", "\n\n", body_cleaned).strip()
         return body_cleaned, tags
 
+    @staticmethod
+    def _normalize_image_bytes_sync(raw_bytes: bytes, out_stem: pathlib.Path) -> tuple[pathlib.Path, str] | None:
+        """
+        使用 Pillow 校验并将任何 WebP / 16-bit / CMYK / 非标图片统一转换为 QQ 官方接口 (qq_official) 100% 支持的标准 8-bit RGB JPEG 或 PNG，
+        彻底解决 QQOfficial upload_group_and_c2c_image 报错「ServerError: 富媒体文件格式不支持」的问题。
+        """
+        if not raw_bytes or len(raw_bytes) < 64:
+            return None
+        try:
+            from PIL import Image
+            with Image.open(io.BytesIO(raw_bytes)) as im:
+                fmt = (im.format or "").upper()
+                # 若是动图 GIF 且帧数 > 1，保留标准 GIF
+                if fmt == "GIF" and getattr(im, "is_animated", False):
+                    out_path = out_stem.with_suffix(".gif")
+                    out_path.write_bytes(raw_bytes)
+                    b64 = base64.b64encode(raw_bytes).decode("ascii")
+                    return out_path, f"data:image/gif;base64,{b64}"
+
+                # 限制最大边长不超过 2560，防止超大原图超出 QQ 官方富媒体大小限制
+                max_side = 2560
+                w, h = im.size
+                if w > max_side or h > max_side:
+                    scale = max_side / float(max(w, h))
+                    im = im.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
+
+                # 统一转换为标准 8-bit RGB JPEG（若含透明通道则转为白底 RGB JPEG 或标准 RGBA PNG）
+                if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                    rgba = im.convert("RGBA")
+                    bg = Image.new("RGB", rgba.size, (255, 255, 255))
+                    bg.paste(rgba, mask=rgba.split()[3])
+                    rgb_im = bg
+                else:
+                    rgb_im = im.convert("RGB")
+
+                buf = io.BytesIO()
+                rgb_im.save(buf, format="JPEG", quality=92, optimize=True)
+                jpg_bytes = buf.getvalue()
+                out_path = out_stem.with_suffix(".jpg")
+                out_path.write_bytes(jpg_bytes)
+                b64 = base64.b64encode(jpg_bytes).decode("ascii")
+                return out_path, f"data:image/jpeg;base64,{b64}"
+        except Exception:
+            return None
+
     async def _download_image_cached(self, url: str) -> tuple[str | None, str | None]:
         if not url:
             return None, None
         if not self.http_client or self.http_client.is_closed:
             await self._init_http_client()
 
+        # 将 pbs.twimg.com 链接中的 format=webp 自动替换为 format=jpg
+        fetch_url = re.sub(r"([?&]format=)webp\b", r"\1jpg", url, flags=re.I)
         url_hash = hashlib.md5(url.encode("utf-8")).hexdigest()
-        existing = list(self.image_cache_dir.glob(f"{url_hash}.*"))
+        out_stem = self.image_cache_dir / url_hash
+
+        existing = [
+            p for p in self.image_cache_dir.glob(f"{url_hash}.*")
+            if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".gif")
+        ]
         if existing:
             local_path = existing[0]
             data_uri = await asyncio.to_thread(self._file_to_data_uri, local_path)
             return str(local_path), data_uri
 
+        # 若旧缓存中存在 .webp 文件，自动转换升级为 .jpg 并删除旧 .webp
+        old_webp = self.image_cache_dir / f"{url_hash}.webp"
+        if old_webp.exists():
+            try:
+                raw_b = await asyncio.to_thread(old_webp.read_bytes)
+                norm_res = await asyncio.to_thread(self._normalize_image_bytes_sync, raw_b, out_stem)
+                old_webp.unlink(missing_ok=True)
+                if norm_res:
+                    return str(norm_res[0]), norm_res[1]
+            except Exception:
+                pass
+
         try:
-            resp = await self.http_client.get(url)
+            resp = await self.http_client.get(fetch_url)
             resp.raise_for_status()
-            content_type = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-            ext = mimetypes.guess_extension(content_type) or ".jpg"
-            if ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
-                ext = ".jpg"
-            local_path = self.image_cache_dir / f"{url_hash}{ext}"
             content_bytes = resp.content
-
-            def _save_and_encode() -> str:
-                local_path.write_bytes(content_bytes)
-                b64 = base64.b64encode(content_bytes).decode("ascii")
-                return f"data:{content_type};base64,{b64}"
-
-            data_uri = await asyncio.to_thread(_save_and_encode)
-            return str(local_path), data_uri
+            norm_res = await asyncio.to_thread(
+                self._normalize_image_bytes_sync, content_bytes, out_stem
+            )
+            if not norm_res:
+                logger.warning(f"[TwitterRSS] 忽略不支持或损坏的媒体文件 ({url})")
+                return None, None
+            return str(norm_res[0]), norm_res[1]
         except Exception as e:
-            logger.warning(f"[TwitterRSS] 下载推文图片失败 ({url}): {e}")
+            logger.warning(f"[TwitterRSS] 下载推文图片失败 ({url}): {type(e).__name__}: {e}")
             return None, None
 
     @staticmethod
@@ -1977,8 +2036,10 @@ class TwitterRssPlugin(Star):
         display_image_srcs: list[str] = []
         for img_url in prepared.get("images", []):
             local_path, data_uri = await self._download_image_cached(img_url)
-            local_image_paths.append(local_path or img_url)
-            display_image_srcs.append(data_uri or img_url)
+            if local_path:
+                local_image_paths.append(local_path)
+            if data_uri:
+                display_image_srcs.append(data_uri)
 
         # 若引用推文自身带图而外层推文无图，也将引用推文的图片纳入原图发送与视觉评估列表
         if not local_image_paths and quote_info and q_detail.get("images"):
@@ -2434,8 +2495,16 @@ class TwitterRssPlugin(Star):
                 if not bot_uin.isdigit():
                     bot_uin = "10000"
 
+                # 判断是否为 QQ 官方机器人会话（umo 含 qq_official 或群号为 32 位十六进制 OpenID）
+                umo_tail = umo.split(":")[-1]
+                is_qq_official = (
+                    "qq_official" in umo.lower()
+                    or "qqofficial" in umo.lower()
+                    or bool(re.match(r"^[0-9A-Fa-f]{32}$", umo_tail))
+                )
+
                 # 若是 OneBot v11 (aiocqhttp) 等支持 Comp.Node 的平台，构造合并转发节点
-                if not umo.lower().startswith("qq_official:") and hasattr(Comp, "Node"):
+                if not is_qq_official and hasattr(Comp, "Node"):
                     try:
                         node_list = [
                             Comp.Node(
@@ -2487,9 +2556,12 @@ class TwitterRssPlugin(Star):
                 )
                 for raw_img in raw_images:
                     await asyncio.sleep(0.6)
-                    await self.context.send_message(
-                        umo, MessageChain([self._make_image_comp(raw_img)])
-                    )
+                    try:
+                        await self.context.send_message(
+                            umo, MessageChain([self._make_image_comp(raw_img)])
+                        )
+                    except Exception as img_err:
+                        logger.warning(f"[TwitterRSS] 发送单张原图 ({raw_img}) 失败，已跳过该原图: {img_err}")
         except Exception as e:
             logger.error(f"[TwitterRSS] 向群聊会话 {umo} 推送推文失败: {e}")
 
