@@ -17,6 +17,7 @@ import mimetypes
 import pathlib
 import random
 import re
+import shutil
 import time
 import xml.etree.ElementTree as ET
 from typing import Any
@@ -421,6 +422,9 @@ class TwitterRssPlugin(Star):
 
         self.state_file = self.data_dir / "state.json"
         self.history_file = self.data_dir / "tweets_24h.json"
+        self.digest_archive_dir = self.data_dir / "digest_archive"
+        self.digest_archive_dir.mkdir(parents=True, exist_ok=True)
+        self.digest_archive_file = self.data_dir / "digest_archive.json"
 
         self.state: dict[str, Any] = self._load_json_sync(
             self.state_file,
@@ -433,6 +437,9 @@ class TwitterRssPlugin(Star):
         )
         self.history_tweets: list[dict[str, Any]] = self._load_json_sync(
             self.history_file, default=[]
+        )
+        self.digest_archive: dict[str, dict[str, Any]] = self._load_json_sync(
+            self.digest_archive_file, default={}
         )
 
         # 自动将旧版全局配置平滑迁移到按群聊分类的 group_subscriptions 中
@@ -599,6 +606,221 @@ class TwitterRssPlugin(Star):
             )
 
         await asyncio.to_thread(_write)
+
+    async def _save_digest_archive(self):
+        def _write():
+            self.digest_archive_file.write_text(
+                json.dumps(self.digest_archive, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+        await asyncio.to_thread(_write)
+
+    @staticmethod
+    def _parse_query_date(date_str: str) -> str:
+        """
+        将用户输入的日期解析为标准的 YYYY-MM-DD 格式：
+        支持：今天/昨天/前天、2026-10-14、2026.10.14、2026/10/14、20261014、10-14、10.14、10月14日
+        """
+        s = (date_str or "").strip()
+        if not s:
+            return ""
+        now = datetime.datetime.now()
+        if s in ("今天", "今日", "today", "Today"):
+            return now.strftime("%Y-%m-%d")
+        if s in ("昨天", "昨日", "yesterday", "Yesterday"):
+            return (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        if s in ("前天", "前日"):
+            return (now - datetime.timedelta(days=2)).strftime("%Y-%m-%d")
+
+        if re.match(r"^\d{8}$", s):
+            return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+
+        m_full = re.match(r"^(\d{4})[-./年](\d{1,2})[-./月](\d{1,2})日?$", s)
+        if m_full:
+            y, m, d = int(m_full.group(1)), int(m_full.group(2)), int(m_full.group(3))
+            return f"{y:04d}-{m:02d}-{d:02d}"
+
+        m_short = re.match(r"^(\d{1,2})[-./月](\d{1,2})日?$", s)
+        if m_short:
+            m, d = int(m_short.group(1)), int(m_short.group(2))
+            return f"{now.year:04d}-{m:02d}-{d:02d}"
+
+        return ""
+
+    async def _archive_daily_digest(
+        self,
+        umo: str,
+        group_name: str,
+        date_key: str,
+        digest_img_path: str,
+        render_data: dict[str, Any],
+    ) -> str:
+        """将生成的每日要闻长图及元数据持久化归档到本地 digest_archive 目录"""
+        umo_hash = hashlib.md5(umo.encode("utf-8")).hexdigest()[:12]
+        archived_img_path = self.digest_archive_dir / f"digest_{umo_hash}_{date_key}.png"
+
+        def _copy_img():
+            src_p = pathlib.Path(digest_img_path)
+            if src_p.exists() and src_p.is_file():
+                shutil.copy2(src_p, archived_img_path)
+
+        await asyncio.to_thread(_copy_img)
+
+        light_items: list[dict[str, Any]] = []
+        for it in render_data.get("items", []):
+            light_items.append(
+                {
+                    "category": it.get("category", ""),
+                    "username": it.get("username", ""),
+                    "author_name": it.get("author_name", ""),
+                    "pub_date": it.get("pub_date", ""),
+                    "title": it.get("title", ""),
+                    "summary": it.get("summary", ""),
+                    "raw_image_url": it.get("raw_image_url", ""),
+                    "palette": it.get("palette", {}),
+                }
+            )
+
+        group_bucket = self.digest_archive.setdefault(umo, {})
+        group_bucket[date_key] = {
+            "date_key": date_key,
+            "date_str": render_data.get("date_str", date_key.replace("-", ".")),
+            "group_name": group_name,
+            "umo": umo,
+            "image_path": str(archived_img_path),
+            "total_count": render_data.get("total_count", 0),
+            "account_count": render_data.get("account_count", 0),
+            "item_count": len(light_items),
+            "theme": render_data.get("theme", {}),
+            "theme_mid": render_data.get("theme_mid", {}),
+            "theme_end": render_data.get("theme_end", {}),
+            "items_meta": light_items,
+            "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        await self._save_digest_archive()
+        return str(archived_img_path)
+
+    async def _get_or_rerender_archived_digest(
+        self, umo: str, date_key: str
+    ) -> tuple[bool, str]:
+        """根据群聊 UMO 与日期 YYYY-MM-DD 调取本地归档的日报图片；若原图被清理则根据归档元数据重新渲染"""
+        group_bucket = self.digest_archive.get(umo, {})
+        record = group_bucket.get(date_key)
+
+        if not record:
+            umo_tail = umo.split(":")[-1]
+            for k_umo, bucket in self.digest_archive.items():
+                if k_umo.endswith(umo_tail) and date_key in bucket:
+                    record = bucket[date_key]
+                    break
+
+        if not record:
+            return False, ""
+
+        img_path_str = str(record.get("image_path") or "")
+        if img_path_str and pathlib.Path(img_path_str).exists():
+            return True, img_path_str
+
+        items_meta = record.get("items_meta") or []
+        if not items_meta:
+            return False, ""
+
+        rebuilt_items: list[dict[str, Any]] = []
+        for it in items_meta:
+            thumb_src = ""
+            raw_u = it.get("raw_image_url", "")
+            if raw_u:
+                _, b64_uri = await self._download_image_cached(raw_u)
+                thumb_src = b64_uri or raw_u
+            rebuilt_items.append(
+                {
+                    "category": it.get("category", "资讯速递"),
+                    "username": it.get("username", ""),
+                    "author_name": it.get("author_name", ""),
+                    "pub_date": it.get("pub_date", ""),
+                    "title": it.get("title", ""),
+                    "summary": it.get("summary", ""),
+                    "thumb_src": thumb_src,
+                    "palette": it.get("palette") or MACARON_PALETTES[0],
+                }
+            )
+
+        render_data = {
+            "date_str": record.get("date_str") or date_key.replace("-", "."),
+            "total_count": record.get("total_count", len(rebuilt_items)),
+            "account_count": record.get("account_count", 0),
+            "theme": record.get("theme") or MACARON_PALETTES[0],
+            "theme_mid": record.get("theme_mid") or MACARON_PALETTES[0],
+            "theme_end": record.get("theme_end") or MACARON_PALETTES[0],
+            "items": rebuilt_items,
+        }
+        new_img_path = await self._render_html_to_image(DAILY_DIGEST_TMPL, render_data)
+        umo_hash = hashlib.md5(umo.encode("utf-8")).hexdigest()[:12]
+        archived_img_path = self.digest_archive_dir / f"digest_{umo_hash}_{date_key}.png"
+        try:
+            shutil.copy2(new_img_path, archived_img_path)
+            record["image_path"] = str(archived_img_path)
+            await self._save_digest_archive()
+            return True, str(archived_img_path)
+        except Exception:
+            return True, new_img_path
+
+    async def _clear_local_cache(self, scope: str = "cache") -> dict[str, Any]:
+        """
+        清理本地缓存：
+        - scope="cache" (默认): 清理本地推文缓存 (history_tweets.json)、图片缓存 (img_cache/) 及内存缓存，保留日报归档与已读记录
+        - scope="archive": 仅清理历史日报归档 (digest_archive/ 与 digest_archive.json)
+        - scope="all": 清理所有本地缓存（推文缓存、图片缓存、历史日报归档、已读 seen_ids）
+        """
+        scope_clean = (scope or "cache").strip().lower()
+        removed_files = 0
+        freed_bytes = 0
+
+        def _delete_dir_files(directory: pathlib.Path):
+            nonlocal removed_files, freed_bytes
+            if not directory.exists():
+                return
+            for p in directory.iterdir():
+                if p.is_file():
+                    try:
+                        freed_bytes += p.stat().st_size
+                        p.unlink()
+                        removed_files += 1
+                    except Exception:
+                        pass
+
+        cleared_tweets = 0
+        cleared_archives = 0
+
+        if scope_clean in ("cache", "default", "tweets", "images", "all"):
+            cleared_tweets = len(self.history_tweets)
+            self.history_tweets = []
+            await self._save_history()
+            await asyncio.to_thread(_delete_dir_files, self.image_cache_dir)
+            self._user_profile_cache.clear()
+            self._status_detail_cache.clear()
+            self._not_found_accounts.clear()
+
+        if scope_clean in ("archive", "digest", "all"):
+            for bucket in self.digest_archive.values():
+                cleared_archives += len(bucket)
+            self.digest_archive = {}
+            await self._save_digest_archive()
+            await asyncio.to_thread(_delete_dir_files, self.digest_archive_dir)
+
+        if scope_clean == "all":
+            self.state["seen_ids"] = {}
+            self.state["initialized_keys"] = []
+            await self._save_state()
+
+        return {
+            "scope": scope_clean,
+            "removed_files": removed_files,
+            "freed_mb": round(freed_bytes / (1024 * 1024), 2),
+            "cleared_tweets": cleared_tweets,
+            "cleared_archives": cleared_archives,
+        }
 
     async def _save_history(self):
         cutoff = time.time() - 48 * 3600
@@ -2581,6 +2803,7 @@ class TwitterRssPlugin(Star):
                         "title": clean_title,
                         "summary": clean_summary,
                         "thumb_src": thumb_src,
+                        "raw_image_url": src_tweet["images"][0] if src_tweet.get("images") else "",
                         "palette": item_palette,
                     }
                 )
@@ -2611,6 +2834,7 @@ class TwitterRssPlugin(Star):
                             "title": f"@{src_tweet.get('username')} 发布最新动态",
                             "summary": fallback_text,
                             "thumb_src": thumb_src,
+                            "raw_image_url": src_tweet["images"][0] if src_tweet.get("images") else "",
                             "palette": item_palette,
                         }
                     )
@@ -2632,12 +2856,21 @@ class TwitterRssPlugin(Star):
             }
 
             digest_img_path = await self._render_html_to_image(DAILY_DIGEST_TMPL, render_data)
+            date_key = now.strftime("%Y-%m-%d")
+            archived_path = await self._archive_daily_digest(
+                umo=umo,
+                group_name=str(rule.get("group_name") or umo),
+                date_key=date_key,
+                digest_img_path=digest_img_path,
+                render_data=render_data,
+            )
+            send_img_path = archived_path if pathlib.Path(archived_path).exists() else digest_img_path
             try:
                 await self.context.send_message(
-                    umo, MessageChain([self._make_image_comp(digest_img_path)])
+                    umo, MessageChain([self._make_image_comp(send_img_path)])
                 )
                 pushed_any = True
-                last_img_path = digest_img_path
+                last_img_path = send_img_path
             except Exception as e:
                 logger.error(f"[TwitterRSS] 向会话 {umo} 推送24小时要闻长图失败: {e}")
 
@@ -2926,12 +3159,110 @@ class TwitterRssPlugin(Star):
         )
 
     @tw.command("digest")
-    async def tw_digest(self, event: AstrMessageEvent):
-        """立即按当前群聊订阅账号汇总过去24小时推文并生成精选新闻长图推送到本群"""
+    async def tw_digest(self, event: AstrMessageEvent, date_arg: str = ""):
+        """立即生成今日24小时要闻长图（并归档到本地），或传入日期（如 2026-10-14 / 昨天）调取指定日期的要闻"""
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
+        if date_arg.strip():
+            async for res in self._handle_query_digest_by_date(event, rule, date_arg.strip()):
+                yield res
+            return
+
         yield event.plain_result(
             f"正在整理本群【{rule.get('group_name')}】过去 24 小时的推文并生成《今日要闻》长图，请稍候..."
         )
         ok, info = await self.run_daily_digest(target_rule=rule)
         if not ok:
             yield event.plain_result(f"⚠️ 无法生成每日新闻简报：{info}")
+
+    @tw.command("news")
+    async def tw_news(self, event: AstrMessageEvent, date_arg: str = ""):
+        """调取本群指定日期的本地归档《今日要闻》长图（如 /tw news 2026-10-14 或 /tw news 昨天），不填日期则列出已归档日期"""
+        rule = self._find_or_create_group_rule(event, create_if_missing=True)
+        async for res in self._handle_query_digest_by_date(event, rule, date_arg.strip()):
+            yield res
+
+    @tw.command("history")
+    async def tw_history(self, event: AstrMessageEvent, date_arg: str = ""):
+        """调取本群指定日期的本地归档《今日要闻》长图（同 /tw news）"""
+        rule = self._find_or_create_group_rule(event, create_if_missing=True)
+        async for res in self._handle_query_digest_by_date(event, rule, date_arg.strip()):
+            yield res
+
+    async def _handle_query_digest_by_date(
+        self, event: AstrMessageEvent, rule: dict[str, Any], date_arg: str
+    ):
+        umo = self._resolve_target_umo(rule.get("target_umo", "")) or event.unified_msg_origin
+        group_bucket = self.digest_archive.get(umo, {})
+        if not group_bucket:
+            umo_tail = umo.split(":")[-1]
+            for k_umo, b in self.digest_archive.items():
+                if k_umo.endswith(umo_tail) and b:
+                    group_bucket = b
+                    break
+
+        if not date_arg:
+            if not group_bucket:
+                yield event.plain_result(
+                    f"📂 本群【{rule.get('group_name')}】本地暂无已归档的历史《今日要闻》。\n"
+                    f"每日定时生成或发送 `/tw digest` 生成后会自动保存在本地。"
+                )
+                return
+            sorted_dates = sorted(group_bucket.keys(), reverse=True)
+            lines = [f"📅 本群【{rule.get('group_name')}】已保存在本地的《今日要闻》归档（共 {len(sorted_dates)} 期）："]
+            for d_key in sorted_dates[:20]:
+                rec = group_bucket[d_key]
+                lines.append(f"• {d_key}（精选 {rec.get('item_count', 0)} 条，生成于 {rec.get('created_at', '')}）")
+            lines.append("\n💡 发送 `/tw news <日期>`（如 `/tw news 2026-10-14`、`/tw news 10-14` 或 `/tw news 昨天`）即可调取对应日期的要闻长图。")
+            yield event.plain_result("\n".join(lines))
+            return
+
+        target_date = self._parse_query_date(date_arg)
+        if not target_date:
+            yield event.plain_result(
+                f"⚠️ 日期格式无法识别：{date_arg}\n"
+                f"支持格式示例：`2026-10-14`、`10-14`、`20261014`、`今天`、`昨天`、`前天`。"
+            )
+            return
+
+        ok, img_path = await self._get_or_rerender_archived_digest(umo, target_date)
+        if not ok or not img_path:
+            avail = sorted(group_bucket.keys(), reverse=True)[:10]
+            avail_tip = f"\n本群当前可调取的归档日期：{', '.join(avail)}" if avail else "\n本群本地暂无任何归档记录。"
+            yield event.plain_result(
+                f"⚠️ 未找到本群在 【{target_date}】 的本地《今日要闻》归档记录。{avail_tip}"
+            )
+            return
+
+        yield event.chain_result([self._make_image_comp(img_path)])
+
+    @tw.command("clear")
+    async def tw_clear(self, event: AstrMessageEvent, scope: str = "cache"):
+        """
+        清除本地缓存指令：
+        - /tw clear : 清理本地推文缓存 (history_tweets.json) 与图片缓存 (img_cache/)，保留日报归档与已读记录
+        - /tw clear archive : 清理本地保存的历史《今日要闻》日报归档
+        - /tw clear all : 清理全部本地缓存（含推文缓存、图片缓存、历史日报归档与已读记录）
+        """
+        res = await self._clear_local_cache(scope=scope)
+        sc = res["scope"]
+        if sc in ("archive", "digest"):
+            yield event.plain_result(
+                f"🗑️ 已清除本地《今日要闻》历史归档！\n"
+                f"• 移除归档期数: {res['cleared_archives']} 期\n"
+                f"• 清理文件数: {res['removed_files']} 个（释放空间 {res['freed_mb']} MB）"
+            )
+        elif sc == "all":
+            yield event.plain_result(
+                f"🗑️ 已彻底清空插件全部本地缓存！\n"
+                f"• 清除缓存推文: {res['cleared_tweets']} 条\n"
+                f"• 清除日报归档: {res['cleared_archives']} 期\n"
+                f"• 清理图片与归档文件: {res['removed_files']} 个（释放空间 {res['freed_mb']} MB）\n"
+                f"• 已读状态记录 (seen_ids) 已重置"
+            )
+        else:
+            yield event.plain_result(
+                f"🗑️ 已清除本地推文与图片缓存！\n"
+                f"• 清除本地缓存推文: {res['cleared_tweets']} 条\n"
+                f"• 清理本地缓存图片: {res['removed_files']} 个（释放空间 {res['freed_mb']} MB）\n"
+                f"💡 历史《今日要闻》日报归档与订阅配置已保留（如需连同历史日报归档一并清空，可发送 `/tw clear all` 或 `/tw clear archive`）。"
+            )
