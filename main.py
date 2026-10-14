@@ -2882,6 +2882,39 @@ class TwitterRssPlugin(Star):
     # 聊天管理指令组 (/tw ...) —— 所有指令均按当前群聊独立配置操作！
     # =========================================================================
 
+    @staticmethod
+    def _has_admin_permission(event: AstrMessageEvent) -> bool:
+        """
+        检查发送者是否具备群聊管理员/群主权限或 AstrBot 机器人管理员权限：
+        兼容 AstrBot 原生 event.is_admin()、event.role、message_obj.sender.role 以及 OneBot/QQ官方 raw_message 角色字段
+        """
+        try:
+            if hasattr(event, "is_admin") and callable(event.is_admin) and event.is_admin():
+                return True
+        except Exception:
+            pass
+
+        role_str = str(getattr(event, "role", "") or "").lower()
+        if role_str in ("admin", "owner", "administrator", "creator", "superuser"):
+            return True
+
+        msg_obj = getattr(event, "message_obj", None)
+        if msg_obj is not None:
+            sender = getattr(msg_obj, "sender", None)
+            if sender is not None:
+                s_role = str(getattr(sender, "role", "") or "").lower()
+                if s_role in ("admin", "owner", "administrator", "creator"):
+                    return True
+            raw_msg = getattr(msg_obj, "raw_message", None)
+            if isinstance(raw_msg, dict):
+                raw_sender = raw_msg.get("sender")
+                if isinstance(raw_sender, dict):
+                    r_role = str(raw_sender.get("role") or "").lower()
+                    if r_role in ("admin", "owner", "administrator", "creator"):
+                        return True
+
+        return False
+
     @filter.command_group("tw")
     def tw(self):
         """推特 RSS 分群独立订阅与标签过滤管理指令组"""
@@ -2901,9 +2934,13 @@ class TwitterRssPlugin(Star):
             f"可发送 `/tw add <账号>` 添加本群订阅，或发送 `/tw list` 查看本群标签过滤规则。"
         )
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("unsub")
     async def tw_unsub(self, event: AstrMessageEvent):
         """移除当前群聊的独立订阅配置"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         rule = self._find_or_create_group_rule(event, create_if_missing=False)
         if not rule:
             yield event.plain_result("当前群聊尚未绑定任何订阅配置。")
@@ -2945,9 +2982,13 @@ class TwitterRssPlugin(Star):
             f"本群当前订阅数: {len(self._get_rule_accounts(rule))} 个"
         )
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("del")
     async def tw_del(self, event: AstrMessageEvent, account: str):
         """从当前群聊移除订阅的推特账号"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         acct = account.strip().lstrip("@")
         rule = self._find_or_create_group_rule(event, create_if_missing=False)
         if not rule:
@@ -2962,9 +3003,13 @@ class TwitterRssPlugin(Star):
         self._save_plugin_config()
         yield event.plain_result(f"🗑️ 已从当前群聊【{rule.get('group_name')}】移除推特订阅: @{acct}")
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("must_add")
     async def tw_must_add(self, event: AstrMessageEvent, tag: str):
         """为当前群聊添加【必须包含】图片标签（全部命中才通过）"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         t = tag.strip().lstrip("#＃")
         if not t:
             yield event.plain_result("请指定要添加的必须包含标签，例如 `/tw must_add 萝莉`。")
@@ -2980,9 +3025,13 @@ class TwitterRssPlugin(Star):
             f"当前必须包含标签（全部命中才通过）: {', '.join(tags)}"
         )
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("must_del")
     async def tw_must_del(self, event: AstrMessageEvent, tag: str):
         """从当前群聊移除【必须包含】图片标签"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         t = tag.strip().lstrip("#＃")
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
         tags = self._clean_str_list(rule.get("must_include_image_tags", []))
@@ -2995,9 +3044,13 @@ class TwitterRssPlugin(Star):
             f"当前必须包含标签: {', '.join(tags) if tags else '不限'}"
         )
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("any_add")
     async def tw_any_add(self, event: AstrMessageEvent, tag: str):
         """为当前群聊添加【其他任意】图片标签（命中任意一条即通过）"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         t = tag.strip().lstrip("#＃")
         if not t:
             yield event.plain_result("请指定要添加的任意标签，例如 `/tw any_add 插画`。")
@@ -3013,9 +3066,13 @@ class TwitterRssPlugin(Star):
             f"当前其他任意标签（匹配1条即通过）: {', '.join(tags)}"
         )
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("any_del")
     async def tw_any_del(self, event: AstrMessageEvent, tag: str):
         """从当前群聊移除【其他任意】图片标签"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         t = tag.strip().lstrip("#＃")
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
         tags = self._clean_str_list(rule.get("any_include_image_tags", []))
@@ -3028,9 +3085,13 @@ class TwitterRssPlugin(Star):
             f"当前其他任意标签: {', '.join(tags) if tags else '不限'}"
         )
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("exc_add")
     async def tw_exc_add(self, event: AstrMessageEvent, tag: str):
         """为当前群聊添加【禁止包含】排除标签"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         t = tag.strip().lstrip("#＃")
         if not t:
             yield event.plain_result("请指定要添加的排除标签，例如 `/tw exc_add NSFW`。")
@@ -3046,9 +3107,13 @@ class TwitterRssPlugin(Star):
             f"当前排除标签: {', '.join(tags)}"
         )
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("exc_del")
     async def tw_exc_del(self, event: AstrMessageEvent, tag: str):
         """从当前群聊移除【禁止包含】排除标签"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         t = tag.strip().lstrip("#＃")
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
         tags = self._clean_str_list(rule.get("exclude_image_tags", []))
@@ -3087,9 +3152,13 @@ class TwitterRssPlugin(Star):
         )
         yield event.plain_result(msg)
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("check")
     async def tw_check(self, event: AstrMessageEvent):
         """立即手动检查当前群聊订阅账号的新推文并推送"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
         accounts = self._get_rule_accounts(rule)
         if not accounts:
@@ -3109,9 +3178,13 @@ class TwitterRssPlugin(Star):
             f"✅ 本群检查完成！共拉取 {stats['fetched']} 条推文，发现 {stats['new']} 条新推文，通过本群规则筛选并推送 {stats['pushed']} 条。{removed_tip}"
         )
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("test")
     async def tw_test(self, event: AstrMessageEvent, account: str = ""):
         """测试推送：按本群独立规则获取每个订阅账号过去的N条推文（默认3条）进行筛选并推送"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
         limit = max(1, int(self.config.get("test_push_tweet_count", 3) or 3))
         target_acct = account.strip().lstrip("@") if account else ""
@@ -3158,9 +3231,13 @@ class TwitterRssPlugin(Star):
             f"• 未通过本群规则被拦截: {stats['filtered']} 条{removed_tip}"
         )
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("digest")
     async def tw_digest(self, event: AstrMessageEvent, date_arg: str = ""):
         """立即生成今日24小时要闻长图（并归档到本地），或传入日期（如 2026-10-14 / 昨天）调取指定日期的要闻"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
         if date_arg.strip():
             async for res in self._handle_query_digest_by_date(event, rule, date_arg.strip()):
@@ -3235,6 +3312,7 @@ class TwitterRssPlugin(Star):
 
         yield event.chain_result([self._make_image_comp(img_path)])
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("clear")
     async def tw_clear(self, event: AstrMessageEvent, scope: str = "cache"):
         """
@@ -3243,6 +3321,9 @@ class TwitterRssPlugin(Star):
         - /tw clear archive : 清理本地保存的历史《今日要闻》日报归档
         - /tw clear all : 清理全部本地缓存（含推文缓存、图片缓存、历史日报归档与已读记录）
         """
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
         res = await self._clear_local_cache(scope=scope)
         sc = res["scope"]
         if sc in ("archive", "digest"):
