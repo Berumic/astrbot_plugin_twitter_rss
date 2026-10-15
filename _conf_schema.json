@@ -31,18 +31,23 @@
             "hint": "本群独立订阅的推特用户名（无需带 @，如 rasra25、tyrant_madoromi、dayoon292）。"
           },
           "account_switches": {
-            "description": "单账号独立推送开关（未单独配置则默认全局设置）",
+            "description": "单账号独立推送开关",
             "type": "object",
-            "hint": "从当前群聊已订阅列表中选择账号，单独设置 转贴 / 回复 / 纯文字 / 图片 的推送方式（默认=跟随全局设置；推送=允许该类型并经AI筛选；直接推送=不经AI判断内容直接推送；不推送=直接跳过）。",
             "items": {
               "account": {
-                "description": "推特账号",
+                "description": "账号",
                 "type": "string",
-                "default": "",
-                "options": [],
-                "hint": "仅显示当前群聊已订阅的推特账号（⚪=默认全局设置，🟠=已单独修改开关）。选择账号后修改下方四项开关并点击保存即可。"
+                "default": "dayoon292",
+                "options": [
+                  "dayoon292",
+                  "omochinoie",
+                  "HlRA__Shine",
+                  "shioc621",
+                  "shinra__bansho",
+                  "ProjMoonStudio [已修改: 图片:直接推送]"
+                ]
               },
-              "push_retweet": {
+              "ov_dayoon292__push_retweet": {
                 "description": "转贴 (RT)",
                 "type": "string",
                 "default": "默认",
@@ -51,9 +56,12 @@
                   "推送",
                   "直接推送",
                   "不推送"
-                ]
+                ],
+                "condition": {
+                  "account_switches.account": "dayoon292"
+                }
               },
-              "push_reply": {
+              "ov_dayoon292__push_reply": {
                 "description": "回复",
                 "type": "string",
                 "default": "默认",
@@ -62,9 +70,12 @@
                   "推送",
                   "直接推送",
                   "不推送"
-                ]
+                ],
+                "condition": {
+                  "account_switches.account": "dayoon292"
+                }
               },
-              "push_text": {
+              "ov_dayoon292__push_text": {
                 "description": "纯文字",
                 "type": "string",
                 "default": "默认",
@@ -73,9 +84,12 @@
                   "推送",
                   "直接推送",
                   "不推送"
-                ]
+                ],
+                "condition": {
+                  "account_switches.account": "dayoon292"
+                }
               },
-              "push_image": {
+              "ov_dayoon292__push_image": {
                 "description": "图片",
                 "type": "string",
                 "default": "默认",
@@ -84,7 +98,2721 @@
                   "推送",
                   "直接推送",
                   "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "dayoon292"
+                }
+              },
+              "ov_omochinoie__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "omochinoie"
+                }
+              },
+              "ov_omochinoie__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "omochinoie"
+                }
+              },
+              "ov_omochinoie__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "omochinoie"
+                }
+              },
+              "ov_omochinoie__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "omochinoie"
+                }
+              },
+              "ov_HlRA__Shine__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "HlRA__Shine"
+                }
+              },
+              "ov_HlRA__Shine__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "HlRA__Shine"
+                }
+              },
+              "ov_HlRA__Shine__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "HlRA__Shine"
+                }
+              },
+              "ov_HlRA__Shine__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "HlRA__Shine"
+                }
+              },
+              "ov_shioc621__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shioc621"
+                }
+              },
+              "ov_shioc621__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shioc621"
+                }
+              },
+              "ov_shioc621__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shioc621"
+                }
+              },
+              "ov_shioc621__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shioc621"
+                }
+              },
+              "ov_shinra__bansho__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shinra__bansho"
+                }
+              },
+              "ov_shinra__bansho__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shinra__bansho"
+                }
+              },
+              "ov_shinra__bansho__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shinra__bansho"
+                }
+              },
+              "ov_shinra__bansho__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shinra__bansho"
+                }
+              },
+              "ov_ProjMoonStudio__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ProjMoonStudio [已修改: 图片:直接推送]"
+                }
+              },
+              "ov_ProjMoonStudio__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ProjMoonStudio [已修改: 图片:直接推送]"
+                }
+              },
+              "ov_ProjMoonStudio__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ProjMoonStudio [已修改: 图片:直接推送]"
+                }
+              },
+              "ov_ProjMoonStudio__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ProjMoonStudio [已修改: 图片:直接推送]"
+                }
+              }
+            }
+          },
+          "enable_vision_tag_filter": {
+            "description": "启用本群图片视觉标签过滤",
+            "type": "bool",
+            "default": true,
+            "hint": "开启后，本群订阅的含图推文将按下方设置的本群专属标签规则进行过滤。"
+          },
+          "must_include_image_tags": {
+            "description": "本群图片【必须包含】标签列表（全部命中才通过）",
+            "type": "list",
+            "default": [
+              "二次元"
+            ],
+            "hint": "图片必须【同时包含】此列表中的所有标签才允许推送到本群（留空则不限制）。"
+          },
+          "any_include_image_tags": {
+            "description": "本群图片【其他任意】标签列表（匹配到一条即通过）",
+            "type": "list",
+            "default": [
+              "插画",
+              "美少女",
+              "萝莉",
+              "立绘",
+              "动漫角色"
+            ],
+            "hint": "在满足必须包含标签的前提下，图片只需【匹配到此列表中的任意一条】标签即通过（留空则不限制）。"
+          },
+          "exclude_image_tags": {
+            "description": "本群图片【禁止包含】标签列表（命中任一即拦截）",
+            "type": "list",
+            "default": [
+              "NSFW",
+              "血腥暴力",
+              "广告二维码",
+              "纯文字聊天截图"
+            ],
+            "hint": "只要视觉模型识别到图片包含此列表中任意一个标签，则不对本群推送。"
+          },
+          "enable_text_ai_filter": {
+            "description": "启用本群 AI 文本价值判断",
+            "type": "bool",
+            "default": true,
+            "hint": "开启后，对纯文本推文（或未开启图片直接放行时）调用文本模型判断是否值得推送到本群。"
+          },
+          "text_filter_prompt": {
+            "description": "本群推文价值判断提示词",
+            "type": "text",
+            "default": "请判断这条推文是否值得推送：重要动态、有趣创作、高质量作品分享值得推送；纯广告、无意义水帖不值得推送。",
+            "hint": "本群专属的文本推文筛选标准。"
+          },
+          "enable_daily_digest": {
+            "description": "向本群推送每日24小时精选新闻长图",
+            "type": "bool",
+            "default": true,
+            "hint": "开启后，每天在全局设定时间点将本群订阅账号过去24小时的推文整理为精选新闻长图推送到本群。"
+          }
+        }
+      },
+      "group_rule_1": {
+        "name": "群聊独立订阅与标签配置 (萝莉)",
+        "hint": "为单个群聊独立配置订阅账号和图片/文本过滤规则",
+        "display_item": "group_name",
+        "hide_hint_in_list": true,
+        "items": {
+          "group_name": {
+            "description": "群聊备注名称",
+            "type": "string",
+            "default": "未命名群聊",
+            "hint": "方便在配置列表中区分不同群聊的名称（例如：插画一群、资讯二群）。"
+          },
+          "target_umo": {
+            "description": "群聊会话 ID (unified_msg_origin 或纯数字群号)",
+            "type": "string",
+            "default": "",
+            "hint": "在目标群聊中发送 /tw sub 即可自动绑定！也可手动填写完整会话 ID（如 aiocqhttp:GroupMessage:123456789）或直接填 QQ 群号（如 123456789）。"
+          },
+          "twitter_accounts": {
+            "description": "本群订阅的推特账号列表",
+            "type": "list",
+            "default": [],
+            "hint": "本群独立订阅的推特用户名（无需带 @，如 rasra25、tyrant_madoromi、dayoon292）。"
+          },
+          "account_switches": {
+            "description": "单账号独立推送开关",
+            "type": "object",
+            "items": {
+              "account": {
+                "description": "账号",
+                "type": "string",
+                "default": "_munel",
+                "options": [
+                  "_munel",
+                  "oisiinira",
+                  "nipeira",
+                  "tttlr_",
+                  "Kanaecookie",
+                  "ekureea",
+                  "she_is_wired",
+                  "H_H4NACH2_",
+                  "sei_umehara",
+                  "shhhInOvaaa",
+                  "koronothu",
+                  "zane290",
+                  "1mop1cs",
+                  "valiant_d69",
+                  "kanato_345",
+                  "may_chatte",
+                  "rrrron_ri",
+                  "sofw0",
+                  "yumenkmc",
+                  "Koyansuee",
+                  "rkgksakana",
+                  "Shiguren_39",
+                  "eluthel1",
+                  "chokopaaa",
+                  "ten_o__o",
+                  "YY749649883736",
+                  "mitukineu",
+                  "hosiumix",
+                  "nanahira",
+                  "ul0ux",
+                  "cho_v_ko",
+                  "Creep41347922",
+                  "sana_natori",
+                  "eluthel",
+                  "LuoSiPredator",
+                  "shioc621",
+                  "2299_1100",
+                  "siromiso555",
+                  "1229Noniha4",
+                  "mone_shiratsuyu",
+                  "tabi_0v0"
                 ]
+              },
+              "ov__munel__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "_munel"
+                }
+              },
+              "ov__munel__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "_munel"
+                }
+              },
+              "ov__munel__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "_munel"
+                }
+              },
+              "ov__munel__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "_munel"
+                }
+              },
+              "ov_oisiinira__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "oisiinira"
+                }
+              },
+              "ov_oisiinira__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "oisiinira"
+                }
+              },
+              "ov_oisiinira__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "oisiinira"
+                }
+              },
+              "ov_oisiinira__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "oisiinira"
+                }
+              },
+              "ov_nipeira__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "nipeira"
+                }
+              },
+              "ov_nipeira__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "nipeira"
+                }
+              },
+              "ov_nipeira__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "nipeira"
+                }
+              },
+              "ov_nipeira__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "nipeira"
+                }
+              },
+              "ov_tttlr___push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "tttlr_"
+                }
+              },
+              "ov_tttlr___push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "tttlr_"
+                }
+              },
+              "ov_tttlr___push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "tttlr_"
+                }
+              },
+              "ov_tttlr___push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "tttlr_"
+                }
+              },
+              "ov_Kanaecookie__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Kanaecookie"
+                }
+              },
+              "ov_Kanaecookie__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Kanaecookie"
+                }
+              },
+              "ov_Kanaecookie__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Kanaecookie"
+                }
+              },
+              "ov_Kanaecookie__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Kanaecookie"
+                }
+              },
+              "ov_ekureea__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ekureea"
+                }
+              },
+              "ov_ekureea__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ekureea"
+                }
+              },
+              "ov_ekureea__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ekureea"
+                }
+              },
+              "ov_ekureea__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ekureea"
+                }
+              },
+              "ov_she_is_wired__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "she_is_wired"
+                }
+              },
+              "ov_she_is_wired__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "she_is_wired"
+                }
+              },
+              "ov_she_is_wired__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "she_is_wired"
+                }
+              },
+              "ov_she_is_wired__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "she_is_wired"
+                }
+              },
+              "ov_H_H4NACH2___push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "H_H4NACH2_"
+                }
+              },
+              "ov_H_H4NACH2___push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "H_H4NACH2_"
+                }
+              },
+              "ov_H_H4NACH2___push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "H_H4NACH2_"
+                }
+              },
+              "ov_H_H4NACH2___push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "H_H4NACH2_"
+                }
+              },
+              "ov_sei_umehara__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sei_umehara"
+                }
+              },
+              "ov_sei_umehara__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sei_umehara"
+                }
+              },
+              "ov_sei_umehara__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sei_umehara"
+                }
+              },
+              "ov_sei_umehara__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sei_umehara"
+                }
+              },
+              "ov_shhhInOvaaa__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shhhInOvaaa"
+                }
+              },
+              "ov_shhhInOvaaa__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shhhInOvaaa"
+                }
+              },
+              "ov_shhhInOvaaa__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shhhInOvaaa"
+                }
+              },
+              "ov_shhhInOvaaa__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shhhInOvaaa"
+                }
+              },
+              "ov_koronothu__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "koronothu"
+                }
+              },
+              "ov_koronothu__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "koronothu"
+                }
+              },
+              "ov_koronothu__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "koronothu"
+                }
+              },
+              "ov_koronothu__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "koronothu"
+                }
+              },
+              "ov_zane290__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "zane290"
+                }
+              },
+              "ov_zane290__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "zane290"
+                }
+              },
+              "ov_zane290__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "zane290"
+                }
+              },
+              "ov_zane290__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "zane290"
+                }
+              },
+              "ov_1mop1cs__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "1mop1cs"
+                }
+              },
+              "ov_1mop1cs__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "1mop1cs"
+                }
+              },
+              "ov_1mop1cs__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "1mop1cs"
+                }
+              },
+              "ov_1mop1cs__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "1mop1cs"
+                }
+              },
+              "ov_valiant_d69__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "valiant_d69"
+                }
+              },
+              "ov_valiant_d69__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "valiant_d69"
+                }
+              },
+              "ov_valiant_d69__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "valiant_d69"
+                }
+              },
+              "ov_valiant_d69__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "valiant_d69"
+                }
+              },
+              "ov_kanato_345__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "kanato_345"
+                }
+              },
+              "ov_kanato_345__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "kanato_345"
+                }
+              },
+              "ov_kanato_345__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "kanato_345"
+                }
+              },
+              "ov_kanato_345__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "kanato_345"
+                }
+              },
+              "ov_may_chatte__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "may_chatte"
+                }
+              },
+              "ov_may_chatte__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "may_chatte"
+                }
+              },
+              "ov_may_chatte__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "may_chatte"
+                }
+              },
+              "ov_may_chatte__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "may_chatte"
+                }
+              },
+              "ov_rrrron_ri__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "rrrron_ri"
+                }
+              },
+              "ov_rrrron_ri__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "rrrron_ri"
+                }
+              },
+              "ov_rrrron_ri__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "rrrron_ri"
+                }
+              },
+              "ov_rrrron_ri__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "rrrron_ri"
+                }
+              },
+              "ov_sofw0__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sofw0"
+                }
+              },
+              "ov_sofw0__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sofw0"
+                }
+              },
+              "ov_sofw0__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sofw0"
+                }
+              },
+              "ov_sofw0__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sofw0"
+                }
+              },
+              "ov_yumenkmc__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "yumenkmc"
+                }
+              },
+              "ov_yumenkmc__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "yumenkmc"
+                }
+              },
+              "ov_yumenkmc__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "yumenkmc"
+                }
+              },
+              "ov_yumenkmc__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "yumenkmc"
+                }
+              },
+              "ov_Koyansuee__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Koyansuee"
+                }
+              },
+              "ov_Koyansuee__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Koyansuee"
+                }
+              },
+              "ov_Koyansuee__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Koyansuee"
+                }
+              },
+              "ov_Koyansuee__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Koyansuee"
+                }
+              },
+              "ov_rkgksakana__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "rkgksakana"
+                }
+              },
+              "ov_rkgksakana__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "rkgksakana"
+                }
+              },
+              "ov_rkgksakana__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "rkgksakana"
+                }
+              },
+              "ov_rkgksakana__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "rkgksakana"
+                }
+              },
+              "ov_Shiguren_39__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Shiguren_39"
+                }
+              },
+              "ov_Shiguren_39__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Shiguren_39"
+                }
+              },
+              "ov_Shiguren_39__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Shiguren_39"
+                }
+              },
+              "ov_Shiguren_39__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Shiguren_39"
+                }
+              },
+              "ov_eluthel1__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "eluthel1"
+                }
+              },
+              "ov_eluthel1__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "eluthel1"
+                }
+              },
+              "ov_eluthel1__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "eluthel1"
+                }
+              },
+              "ov_eluthel1__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "eluthel1"
+                }
+              },
+              "ov_chokopaaa__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "chokopaaa"
+                }
+              },
+              "ov_chokopaaa__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "chokopaaa"
+                }
+              },
+              "ov_chokopaaa__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "chokopaaa"
+                }
+              },
+              "ov_chokopaaa__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "chokopaaa"
+                }
+              },
+              "ov_ten_o__o__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ten_o__o"
+                }
+              },
+              "ov_ten_o__o__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ten_o__o"
+                }
+              },
+              "ov_ten_o__o__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ten_o__o"
+                }
+              },
+              "ov_ten_o__o__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ten_o__o"
+                }
+              },
+              "ov_YY749649883736__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "YY749649883736"
+                }
+              },
+              "ov_YY749649883736__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "YY749649883736"
+                }
+              },
+              "ov_YY749649883736__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "YY749649883736"
+                }
+              },
+              "ov_YY749649883736__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "YY749649883736"
+                }
+              },
+              "ov_mitukineu__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mitukineu"
+                }
+              },
+              "ov_mitukineu__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mitukineu"
+                }
+              },
+              "ov_mitukineu__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mitukineu"
+                }
+              },
+              "ov_mitukineu__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mitukineu"
+                }
+              },
+              "ov_hosiumix__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "hosiumix"
+                }
+              },
+              "ov_hosiumix__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "hosiumix"
+                }
+              },
+              "ov_hosiumix__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "hosiumix"
+                }
+              },
+              "ov_hosiumix__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "hosiumix"
+                }
+              },
+              "ov_nanahira__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "nanahira"
+                }
+              },
+              "ov_nanahira__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "nanahira"
+                }
+              },
+              "ov_nanahira__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "nanahira"
+                }
+              },
+              "ov_nanahira__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "nanahira"
+                }
+              },
+              "ov_ul0ux__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ul0ux"
+                }
+              },
+              "ov_ul0ux__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ul0ux"
+                }
+              },
+              "ov_ul0ux__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ul0ux"
+                }
+              },
+              "ov_ul0ux__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ul0ux"
+                }
+              },
+              "ov_cho_v_ko__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "cho_v_ko"
+                }
+              },
+              "ov_cho_v_ko__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "cho_v_ko"
+                }
+              },
+              "ov_cho_v_ko__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "cho_v_ko"
+                }
+              },
+              "ov_cho_v_ko__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "cho_v_ko"
+                }
+              },
+              "ov_Creep41347922__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Creep41347922"
+                }
+              },
+              "ov_Creep41347922__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Creep41347922"
+                }
+              },
+              "ov_Creep41347922__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Creep41347922"
+                }
+              },
+              "ov_Creep41347922__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Creep41347922"
+                }
+              },
+              "ov_sana_natori__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sana_natori"
+                }
+              },
+              "ov_sana_natori__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sana_natori"
+                }
+              },
+              "ov_sana_natori__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sana_natori"
+                }
+              },
+              "ov_sana_natori__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sana_natori"
+                }
+              },
+              "ov_eluthel__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "eluthel"
+                }
+              },
+              "ov_eluthel__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "eluthel"
+                }
+              },
+              "ov_eluthel__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "eluthel"
+                }
+              },
+              "ov_eluthel__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "eluthel"
+                }
+              },
+              "ov_LuoSiPredator__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "LuoSiPredator"
+                }
+              },
+              "ov_LuoSiPredator__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "LuoSiPredator"
+                }
+              },
+              "ov_LuoSiPredator__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "LuoSiPredator"
+                }
+              },
+              "ov_LuoSiPredator__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "LuoSiPredator"
+                }
+              },
+              "ov_shioc621__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shioc621"
+                }
+              },
+              "ov_shioc621__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shioc621"
+                }
+              },
+              "ov_shioc621__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shioc621"
+                }
+              },
+              "ov_shioc621__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shioc621"
+                }
+              },
+              "ov_2299_1100__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "2299_1100"
+                }
+              },
+              "ov_2299_1100__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "2299_1100"
+                }
+              },
+              "ov_2299_1100__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "2299_1100"
+                }
+              },
+              "ov_2299_1100__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "2299_1100"
+                }
+              },
+              "ov_siromiso555__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "siromiso555"
+                }
+              },
+              "ov_siromiso555__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "siromiso555"
+                }
+              },
+              "ov_siromiso555__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "siromiso555"
+                }
+              },
+              "ov_siromiso555__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "siromiso555"
+                }
+              },
+              "ov_1229Noniha4__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "1229Noniha4"
+                }
+              },
+              "ov_1229Noniha4__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "1229Noniha4"
+                }
+              },
+              "ov_1229Noniha4__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "1229Noniha4"
+                }
+              },
+              "ov_1229Noniha4__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "1229Noniha4"
+                }
+              },
+              "ov_mone_shiratsuyu__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mone_shiratsuyu"
+                }
+              },
+              "ov_mone_shiratsuyu__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mone_shiratsuyu"
+                }
+              },
+              "ov_mone_shiratsuyu__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mone_shiratsuyu"
+                }
+              },
+              "ov_mone_shiratsuyu__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mone_shiratsuyu"
+                }
+              },
+              "ov_tabi_0v0__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "tabi_0v0"
+                }
+              },
+              "ov_tabi_0v0__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "tabi_0v0"
+                }
+              },
+              "ov_tabi_0v0__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "tabi_0v0"
+                }
+              },
+              "ov_tabi_0v0__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "tabi_0v0"
+                }
               }
             }
           },
