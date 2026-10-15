@@ -3358,10 +3358,10 @@
         "default": true
       },
       "test_push_tweet_count": {
-        "description": "随机测试默认抽取总条数",
+        "description": "随机测试默认订阅数量",
         "type": "int",
         "default": 3,
-        "hint": "执行 /tw test 时随机抽取的总条数。/tw test 3 随机抽取合计 3 条；/tw test <账号> 2 从指定账号随机抽取 2 条。沿用本群筛选规则，实际推送数可能少于抽取数。",
+        "hint": "/tw test 3 只随机测试本群 3 个订阅，各抽取 1 条推文，失败或无候选时不扩展到其他订阅。/tw test <账号> 2 仅从指定账号随机抽取 2 条。沿用本群筛选规则。",
         "obvious_hint": true,
         "slider": {
           "min": 1,
@@ -3406,7 +3406,7 @@
         "description": "HTTP/HTTPS 代理地址（可选）",
         "type": "string",
         "default": "",
-        "hint": "拉取推特订阅源或下载 pbs.twimg.com 原图需要代理时填写（例如 http://127.0.0.1:7890）。留空则直连。"
+        "hint": "支持 127.0.0.1:7890，省略协议时自动补 http://；也可填写完整 HTTP/HTTPS 或 SOCKS5 地址（SOCKS 需 socksio）。留空不指定代理。格式无效时记录错误并暂停后台任务，修正后重载生效。"
       }
     }
   },

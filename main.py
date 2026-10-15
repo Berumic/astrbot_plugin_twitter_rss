@@ -573,7 +573,12 @@ class TwitterRssPlugin(Star):
         if self._started:
             return
         self._started = True
-        await self._init_http_client()
+        try:
+            await self._init_http_client()
+        except (ValueError, ImportError) as exc:
+            self._started = False
+            logger.error(f"[TwitterRSS] HTTP 客户端初始化失败，后台任务暂未启动：{exc}。请修改代理配置后重载插件。")
+            return
         self._poll_task = asyncio.create_task(self._poll_loop())
         self._digest_task = asyncio.create_task(self._digest_loop())
         rules = self._get_group_rules()
@@ -583,10 +588,31 @@ class TwitterRssPlugin(Star):
             f"[TwitterRSS] 插件后台服务已启动 | 分群规则数: {len(rules)} 个 | 累计订阅账号: {total_accts} 个 | 轮询间隔: {interval_min} 分钟"
         )
 
+    @staticmethod
+    def _normalize_proxy_url(value: Any) -> str | None:
+        proxy = str(value or "").strip()
+        if not proxy:
+            return None
+        if proxy.startswith("//"):
+            proxy = "http:" + proxy
+        elif "://" not in proxy:
+            proxy = "http://" + proxy
+        try:
+            parsed = urlsplit(proxy)
+            if parsed.scheme.lower() not in {"http", "https", "socks5", "socks5h"}:
+                raise ValueError
+            if not parsed.hostname or any(ch.isspace() for ch in parsed.hostname):
+                raise ValueError
+            if parsed.port is not None and parsed.port < 1:
+                raise ValueError
+            if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+                raise ValueError
+        except ValueError:
+            raise ValueError("代理地址格式无效，支持 127.0.0.1:7890 或 http://127.0.0.1:7890 等格式") from None
+        return parsed._replace(scheme=parsed.scheme.lower()).geturl()
+
     async def _init_http_client(self):
-        if self.http_client and not self.http_client.is_closed:
-            await self.http_client.aclose()
-        proxy = str(self._get_setting("http_proxy", "") or "").strip() or None
+        proxy = self._normalize_proxy_url(self._get_setting("http_proxy", ""))
         headers = {
             "User-Agent": (
                 "AstrBot-TwitterRSS/1.3 (RSS Feed Reader; TelegramBot; "
@@ -597,13 +623,22 @@ class TwitterRssPlugin(Star):
                 "text/xml, application/json, */*;q=0.8"
             ),
         }
-        self.http_client = httpx.AsyncClient(
-            headers=headers,
-            proxy=proxy,
-            timeout=httpx.Timeout(14.0, connect=7.0, pool=3.0),
-            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
-            follow_redirects=True,
-        )
+        try:
+            new_client = httpx.AsyncClient(
+                headers=headers,
+                proxy=proxy,
+                timeout=httpx.Timeout(14.0, connect=7.0, pool=3.0),
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+                follow_redirects=True,
+            )
+        except ImportError:
+            raise ImportError("当前环境缺少 SOCKS 代理依赖，请安装 socksio 或改用 HTTP 代理") from None
+        except (ValueError, httpx.InvalidURL):
+            raise ValueError("无法创建 HTTP 客户端，请检查代理地址的协议、主机及端口格式") from None
+        old_client = self.http_client
+        self.http_client = new_client
+        if old_client and not old_client.is_closed:
+            await old_client.aclose()
 
     async def _http_get_with_recovery(self, url: str) -> httpx.Response:
         """GET with one client reset when the connection pool is exhausted."""
@@ -1225,10 +1260,14 @@ class TwitterRssPlugin(Star):
                 }
                 test_field = copy.deepcopy(s_dict.get("test_push_tweet_count") or s_dict.get("fetch_config", {}).get("items", {}).get("test_push_tweet_count", {}))
                 test_field.update({
-                    "description": "随机测试默认抽取总条数", "type": "int", "default": 3,
-                    "hint": "执行 /tw test 时随机抽取的总条数。/tw test 3 随机抽取合计 3 条；/tw test <账号> 2 从指定账号随机抽取 2 条。沿用本群筛选规则，实际推送数可能少于抽取数。",
+                    "description": "随机测试默认订阅数量", "type": "int", "default": 3,
+                    "hint": "/tw test 3 只随机测试本群 3 个订阅，各抽取 1 条推文，失败或无候选时不扩展到其他订阅。/tw test <账号> 2 仅从指定账号随机抽取 2 条。沿用本群筛选规则。",
                 })
                 s_dict["test_push_tweet_count"] = test_field
+                s_dict["http_proxy"] = {
+                    "description": "HTTP/HTTPS 代理地址（可选）", "type": "string", "default": "",
+                    "hint": "支持 127.0.0.1:7890，省略协议时自动补 http://；也可填写完整 HTTP/HTTPS 或 SOCKS5 地址（SOCKS 需 socksio）。留空不指定代理。格式无效时记录错误并暂停后台任务，修正后重载生效。",
+                }
                 concurrency_fields = {
                     "fetch_concurrency": {
                         "description": "订阅抓取并发数", "type": "int", "default": 4,
@@ -1433,6 +1472,9 @@ class TwitterRssPlugin(Star):
                     self._save_plugin_config()
                 return r
 
+        if not create_if_missing:
+            return None
+
         # 如果有一条未绑定 target_umo 的模板配置，自动将其绑定到当前会话
         for r in rules:
             if not str(r.get("target_umo", "") or "").strip():
@@ -1441,9 +1483,6 @@ class TwitterRssPlugin(Star):
                     r["group_name"] = f"群聊 {gid}" if gid else f"会话 {umo.split(':')[-1]}"
                 self._save_plugin_config()
                 return r
-
-        if not create_if_missing:
-            return None
 
         new_rule: dict[str, Any] = {
             "__template_key": "group_rule",
@@ -3824,8 +3863,12 @@ class TwitterRssPlugin(Star):
         self, manual: bool = False, target_rule: dict[str, Any] | None = None
     ) -> dict[str, int]:
         """Fetch each subscription once, then fan out to independent group consumers."""
+        if manual and target_rule is None:
+            raise ValueError("手动检查必须指定当前群聊规则，禁止回退到全局扫描")
         async with self._lock:
             rules = [target_rule] if target_rule is not None else self._get_group_rules()
+            scope = f"群[{target_rule.get('group_name') or target_rule.get('target_umo')}]" if target_rule is not None else "全部群聊"
+            operation = "手动检查" if manual else "后台扫描"
             stats = {"fetched": 0, "new": 0, "pushed": 0}
             if not rules:
                 return stats
@@ -3986,7 +4029,7 @@ class TwitterRssPlugin(Star):
                     queue.put_nowait((key, account, is_hashtag, tweets))
 
             producers = [asyncio.create_task(produce(key, *source)) for key, source in sources.items()]
-            logger.info(f"[TwitterRSS] 并发检查开始：{len(sources)} 个唯一订阅，抓取并发 {fetch_limit}，处理并发 {process_limit}")
+            logger.info(f"[TwitterRSS] {operation} {scope} 开始：{len(sources)} 个唯一订阅，抓取并发 {fetch_limit}，处理并发 {process_limit}")
             try:
                 await asyncio.gather(*producers)
                 for queue in queues:
@@ -4000,7 +4043,7 @@ class TwitterRssPlugin(Star):
                 await asyncio.gather(*tasks, return_exceptions=True)
                 await self._save_state()
                 await self._save_history()
-            logger.info(f"[TwitterRSS] 推文检查完成：累计拉取 {stats['fetched']} 条，发现新推文 {stats['new']} 条，筛选通过并推送 {stats['pushed']} 条。")
+            logger.info(f"[TwitterRSS] {operation} {scope} 完成：累计拉取 {stats['fetched']} 条，发现新推文 {stats['new']} 条，筛选通过并推送 {stats['pushed']} 条。")
             return stats
 
     async def test_push_for_group(
@@ -4009,7 +4052,7 @@ class TwitterRssPlugin(Star):
         limit: int = 3,
         target_account: str = "",
     ) -> dict[str, Any]:
-        """Randomly sample a total of N tweets; fetch only enough shuffled subscriptions."""
+        """Test N random local subscriptions once each, or N tweets from an explicit account."""
         if limit < 1:
             raise ValueError("测试条数必须为正整数")
         async with self._lock:
@@ -4023,9 +4066,15 @@ class TwitterRssPlugin(Star):
                      "evaluated": 0, "pushed": 0, "filtered": 0, "failed": 0, "removed_accounts": []}
             if not sources or not umo:
                 return stats
-            random.shuffle(sources)
+            if not target_account.strip():
+                sources = random.sample(sources, min(limit, len(sources)))
             concurrency = max(1, min(12, int(self._get_setting("fetch_concurrency", 4) or 4)))
-            pool = {}
+            selected = []
+            selected_ids = set()
+            logger.info(
+                f"[TwitterRSS] 随机测试 群[{group_rule.get('group_name') or umo}]："
+                f"仅抓取选中的 {len(sources)} 个订阅：{', '.join(account for account, _ in sources)}"
+            )
 
             async def fetch_source(account, is_hashtag):
                 stats["subscriptions"] += 1
@@ -4042,11 +4091,8 @@ class TwitterRssPlugin(Star):
                     stats["removed_accounts"].append(account)
                 return account, tweets
 
-            offset = 0
-            while offset < len(sources) and len(pool) < limit:
-                batch_size = min(concurrency, limit - len(pool), len(sources) - offset)
-                batch = sources[offset:offset + batch_size]
-                offset += batch_size
+            for offset in range(0, len(sources), concurrency):
+                batch = sources[offset:offset + concurrency]
                 tasks = [asyncio.create_task(fetch_source(*source)) for source in batch]
                 try:
                     results = await asyncio.gather(*tasks)
@@ -4056,12 +4102,16 @@ class TwitterRssPlugin(Star):
                             task.cancel()
                     await asyncio.gather(*tasks, return_exceptions=True)
                 for account, tweets in results:
+                    pool = {}
                     for tweet in tweets:
                         identity = self._tweet_identity(tweet)
-                        if identity not in pool and not self._should_skip_tweet(tweet, group_rule):
+                        if identity not in selected_ids and identity not in pool and not self._should_skip_tweet(tweet, group_rule):
                             pool[identity] = (account, tweet)
+                    count = limit if target_account.strip() else 1
+                    for entry in random.sample(list(pool.values()), min(count, len(pool))):
+                        selected.append(entry)
+                        selected_ids.add(self._tweet_identity(entry[1]))
 
-            selected = random.sample(list(pool.values()), min(limit, len(pool)))
             stats["sampled"] = len(selected)
             seen_map = self.state.setdefault("seen_ids", {})
             history = {self._tweet_identity(tweet): tweet for tweet in self.history_tweets}
@@ -4643,7 +4693,7 @@ class TwitterRssPlugin(Star):
             f"• 本群文本价值判断: {'开启' if rule.get('enable_text_ai_filter', True) else '关闭'}\n"
             f"• 本群每日24h简报: {'开启' if rule.get('enable_daily_digest', True) else '关闭'} "
             f"(时间点: {self._get_setting('daily_digest_time', '08:30')})\n"
-            f"• 随机测试条数: 合计 {test_count} 条 | 全局已配置群聊总数: {len(all_rules)} 个"
+            f"• 随机测试: 本群 {test_count} 个订阅，各 1 条 | 全局已配置群聊总数: {len(all_rules)} 个"
         )
         yield event.plain_result(msg)
 
@@ -4801,7 +4851,10 @@ class TwitterRssPlugin(Star):
         if not self._has_admin_permission(event):
             yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
             return
-        rule = self._find_or_create_group_rule(event, create_if_missing=True)
+        rule = self._find_or_create_group_rule(event, create_if_missing=False)
+        if rule is None:
+            yield event.plain_result("当前群聊未绑定订阅配置，请先使用 `/tw sub` 绑定本群。")
+            return
         accounts = self._get_rule_accounts(rule)
         hashtags = self._get_rule_hashtags(rule)
         if not accounts and not hashtags:
@@ -4824,7 +4877,7 @@ class TwitterRssPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("test")
     async def tw_test(self, event: AstrMessageEvent, account: str = "", count: str = ""):
-        """随机测试：/tw test [条数] 或 /tw test <账号> [条数]。"""
+        """/tw test N 随机测试本群 N 个订阅；/tw test <账号> N 测试该账号 N 条推文。"""
         if not self._has_admin_permission(event):
             yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
             return
@@ -4840,13 +4893,16 @@ class TwitterRssPlugin(Star):
             yield event.plain_result("⚠️ 条数必须为正整数。用法：`/tw test 3` 或 `/tw test <账号> 2`。")
             return
         target_acct = target_acct.lstrip("@")
-        rule = self._find_or_create_group_rule(event, create_if_missing=True)
+        rule = self._find_or_create_group_rule(event, create_if_missing=False)
+        if rule is None:
+            yield event.plain_result("当前群聊未绑定订阅配置，请先使用 `/tw sub` 绑定本群。")
+            return
         if not target_acct and not (self._get_rule_accounts(rule) or self._get_rule_hashtags(rule)):
             yield event.plain_result("当前群聊没有订阅账号或标签。请先添加订阅，或使用 `/tw test <账号> 2` 测试指定账号。")
             return
-        scope = f"账号 @{target_acct}" if target_acct else "本群订阅账号与标签"
+        scope = f"从账号 @{target_acct} 随机抽取 {limit} 条推文" if target_acct else f"随机选择本群最多 {limit} 个订阅，每个订阅随机抽取 1 条推文"
         yield event.plain_result(
-            f"🧪 正在从{scope}随机抽取合计 {limit} 条推文，按本群【{rule.get('group_name')}】规则筛选后推送，请稍候..."
+            f"🧪 正在{scope}，按本群【{rule.get('group_name')}】规则筛选后推送，请稍候..."
         )
         stats = await self.test_push_for_group(group_rule=rule, limit=limit, target_account=target_acct)
         if stats["fetched"] == 0:
@@ -4854,7 +4910,7 @@ class TwitterRssPlugin(Star):
             tip = f"已自动移除不存在的账号：{'、'.join(removed)}。" if removed else "请检查订阅源与网络配置。"
             yield event.plain_result(f"⚠️ 未获取到推文。{tip}")
             return
-        shortage = f"\n• 当前可用候选不足 {limit} 条，本次抽取 {stats['sampled']} 条" if stats["sampled"] < limit else ""
+        shortage = f"\n• 本次仅抽取 {stats['sampled']} 条：订阅不足，或选中的订阅无可用推文；未扩大测试范围" if stats["sampled"] < limit else ""
         yield event.plain_result(
             f"✅ 本群【{rule.get('group_name')}】随机测试完成！\n"
             f"• 检查订阅数: {stats['subscriptions']} 个\n"
