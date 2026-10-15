@@ -2,10 +2,14 @@
 import ast
 import asyncio
 import copy
+import datetime
 import logging
+import pathlib
 from pathlib import Path
 import random
 import re
+import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -16,7 +20,7 @@ def load_plugin_methods():
         "_get_setting", "_get_group_rules", "_clean_str_list", "_extract_clean_handle",
         "_get_rule_accounts", "_get_rule_hashtags", "_tweet_identity", "_resolve_target_umo",
         "_record_event_umo", "_find_or_create_group_rule", "check_all_accounts",
-        "test_push_for_group", "tw_test", "tw_check",
+        "test_push_for_group", "tw_test", "tw_check", "run_daily_digest", "_matches_rule_subscription",
     }
     original = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "TwitterRssPlugin")
     methods = [n for n in original.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in wanted]
@@ -27,6 +31,11 @@ def load_plugin_methods():
     module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
                              ast.ClassDef(name="Plugin", bases=[], keywords=[], body=methods, decorator_list=[])], type_ignores=[])
     namespace = dict(asyncio=asyncio, copy=copy, random=random, re=re,
+                     time=time, datetime=datetime, pathlib=pathlib,
+                     MACARON_PALETTES=[{}], DAILY_DIGEST_TMPL="digest-template",
+                     _clean_digest_text=lambda text, **kwargs: text,
+                     _compute_harmonious_digest_theme=lambda items, theme: (theme, theme, theme),
+                     MessageChain=lambda items: items,
                      logger=logging.getLogger("scope-tests"), CONFIG_SECTIONS=ast.literal_eval(sections.value))
     exec(compile(ast.fix_missing_locations(module), "main.py (extracted methods)", "exec"), namespace)
     return namespace["Plugin"]
@@ -166,6 +175,45 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
         p.test_push_for_group.assert_not_awaited()
         p._save_plugin_config.assert_not_called()
         self.assertEqual(p.config, before)
+
+    async def test_busy_command_reports_queue_before_fetching(self):
+        p = self.plugin
+        await p._lock.acquire()
+        command = p.tw_test(Event(), "2")
+        try:
+            message = await command.__anext__()
+            self.assertIn("已排队", message)
+            self.assertIn("尚未开始抓取", message)
+            p._fetch_account_tweets.assert_not_awaited()
+            p._fetch_hashtag_tweets.assert_not_awaited()
+        finally:
+            p._lock.release()
+            await command.aclose()
+
+    async def test_digest_renders_archives_and_sends_local_subscription_count(self):
+        p = self.plugin
+        p.history_tweets = [dict(id="1", username="alice", timestamp=time.time(), text="new work"),
+                            dict(id="2", username="foreign", timestamp=time.time(), text="other group")]
+        p._call_llm = AsyncMock(return_value="result")
+        p._extract_json_dict = Mock(return_value={"items": [{"tweet_index": 0, "title": "new work", "summary": "summary"}]})
+        p._render_html_to_image = AsyncMock(return_value="digest.png")
+        p._archive_daily_digest = AsyncMock(return_value="archived.png")
+        p._make_image_comp = Mock(side_effect=lambda path: path)
+        p.context = SimpleNamespace(send_message=AsyncMock())
+        for tag_only in (False, True):
+            with self.subTest(tag_only=tag_only):
+                if tag_only:
+                    self.rule["twitter_accounts"] = []
+                    p.history_tweets[0]["subscription_hashtags"] = ["art"]
+                    p._extract_json_dict.return_value = {}  # Also exercise AI fallback.
+                ok, path = await p.run_daily_digest(target_rule=self.rule)
+                self.assertTrue(ok)
+                data = p._render_html_to_image.await_args.args[1]
+                self.assertEqual(data["account_count"], 1 if tag_only else 5)
+                self.assertEqual(data["total_count"], 1)
+                self.assertEqual(len(data["items"]), 1)
+                self.assertEqual(p._archive_daily_digest.await_args.kwargs["render_data"], data)
+                self.assertEqual(p.context.send_message.await_args.args[0], self.rule["target_umo"])
 
 
 if __name__ == "__main__":

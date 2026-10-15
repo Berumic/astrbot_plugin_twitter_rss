@@ -4336,7 +4336,7 @@ class TwitterRssPlugin(Star):
             render_data = {
                 "date_str": now.strftime("%Y.%m.%d"),
                 "total_count": len(recent_tweets),
-                "account_count": len(group_accts),
+                "account_count": len(self._get_rule_accounts(rule)) + len(self._get_rule_hashtags(rule)),
                 "theme": lead_palette,
                 "theme_mid": mid_palette,
                 "theme_end": end_palette,
@@ -4901,8 +4901,19 @@ class TwitterRssPlugin(Star):
             yield event.plain_result("当前群聊没有订阅账号或标签。请先添加订阅，或使用 `/tw test <账号> 2` 测试指定账号。")
             return
         scope = f"从账号 @{target_acct} 随机抽取 {limit} 条推文" if target_acct else f"随机选择本群最多 {limit} 个订阅，每个订阅随机抽取 1 条推文"
+        waiting_tip = ""
+        if self._lock.locked():
+            waiting_tip = (
+                "⏳ 后台扫描或其他推文任务正在运行，本次测试已排队，尚未开始抓取。"
+                "当前抓取日志属于正在运行的任务，不代表本次测试范围；"
+                "轮到本次测试时只抓取下面指定的订阅范围。\n"
+            )
+            logger.info(
+                f"[TwitterRSS] 随机测试 群[{rule.get('group_name')}] 已排队："
+                f"等待当前任务完成；本次将{scope}"
+            )
         yield event.plain_result(
-            f"🧪 正在{scope}，按本群【{rule.get('group_name')}】规则筛选后推送，请稍候..."
+            f"{waiting_tip}🧪 测试范围：{scope}，按本群【{rule.get('group_name')}】规则筛选后推送，请稍候..."
         )
         stats = await self.test_push_for_group(group_rule=rule, limit=limit, target_account=target_acct)
         if stats["fetched"] == 0:
