@@ -56,6 +56,15 @@ FALLBACK_SOURCE_TEMPLATES = [
     "https://nitter.poast.org/{username}/rss",
 ]
 
+CONFIG_SECTIONS = {
+    "global_push_config": ("全局推送配置", ["default_push_image", "default_push_text", "skip_replies", "skip_retweets", "default_push_retweet", "default_push_reply"]),
+    "push_format_config": ("推送样式与链接", ["include_external_links", "push_send_mode", "enable_merge_forward_over_3", "merge_forward_image_threshold", "merge_forward_uin"]),
+    "ai_config": ("AI 模型与筛选", ["text_provider_id", "vision_provider_id", "image_tweet_bypass_text_filter"]),
+    "fetch_config": ("抓取与并发配置", ["poll_interval_minutes", "fetch_concurrency", "processing_concurrency", "request_interval_seconds", "first_run_mark_seen", "test_push_tweet_count"]),
+    "source_config": ("订阅源与网络配置", ["rss_base_url", "enable_multi_source_fallback", "hashtag_search_url", "hashtag_search_fallback_urls", "http_proxy"]),
+    "digest_config": ("每日简报配置", ["enable_daily_digest", "daily_digest_time", "daily_digest_max_items", "daily_digest_prompt"]),
+}
+
 
 MACARON_PALETTES: list[dict[str, str]] = [
     {
@@ -413,11 +422,13 @@ class TwitterRssPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig | None = None):
         super().__init__(context)
         self.config: AstrBotConfig | dict[str, Any] = config if config is not None else {}
+        if self._migrate_grouped_config() and hasattr(self.config, "save_config"):
+            self.config.save_config()
 
         # 自动检测并迁移旧版失效的 rsshub.app 官方默认地址
-        curr_base = str(self.config.get("rss_base_url", "") or "").strip()
+        curr_base = str(self._get_setting("rss_base_url", "") or "").strip()
         if "rsshub.app/twitter/" in curr_base:
-            self.config["rss_base_url"] = "https://fxtwitter.com/{username}/feed.xml"
+            self.config.setdefault("source_config", {})["rss_base_url"] = "https://fxtwitter.com/{username}/feed.xml"
             self._save_plugin_config()
 
         # 使用框架规范的 StarTools.get_data_dir 获取持久化数据目录
@@ -475,18 +486,18 @@ class TwitterRssPlugin(Star):
 
     def _migrate_legacy_config(self):
         """如果旧配置中有全局 twitter_accounts 或 push_targets，且 group_subscriptions 为空，则自动迁移"""
-        groups = self.config.get("group_subscriptions")
+        groups = self._get_setting("group_subscriptions")
         if isinstance(groups, list) and len(groups) > 0:
             return
 
         old_targets = [
             str(x).strip()
-            for x in (self.config.get("push_targets", []) or [])
+            for x in (self._get_setting("push_targets", []) or [])
             if str(x).strip()
         ]
         old_accounts = [
             str(x).strip().lstrip("@")
-            for x in (self.config.get("twitter_accounts", []) or [])
+            for x in (self._get_setting("twitter_accounts", []) or [])
             if str(x).strip()
         ]
         if not old_targets and not old_accounts:
@@ -494,14 +505,14 @@ class TwitterRssPlugin(Star):
 
         old_must = [
             str(x).strip()
-            for x in (self.config.get("must_include_image_tags", []) or [])
+            for x in (self._get_setting("must_include_image_tags", []) or [])
             if str(x).strip()
         ]
         old_any = [
             str(x).strip()
             for x in (
-                self.config.get("any_include_image_tags")
-                or self.config.get("include_image_tags")
+                self._get_setting("any_include_image_tags")
+                or self._get_setting("include_image_tags")
                 or ["插画", "二次元"]
             )
             if str(x).strip()
@@ -509,7 +520,7 @@ class TwitterRssPlugin(Star):
         old_exc = [
             str(x).strip()
             for x in (
-                self.config.get("exclude_image_tags")
+                self._get_setting("exclude_image_tags")
                 or ["NSFW", "血腥暴力", "广告二维码"]
             )
             if str(x).strip()
@@ -526,16 +537,16 @@ class TwitterRssPlugin(Star):
                     "target_umo": umo,
                     "twitter_accounts": list(old_accounts),
                     "enable_vision_tag_filter": bool(
-                        self.config.get("enable_vision_tag_filter", True)
+                        self._get_setting("enable_vision_tag_filter", True)
                     ),
                     "must_include_image_tags": list(old_must),
                     "any_include_image_tags": list(old_any),
                     "exclude_image_tags": list(old_exc),
                     "enable_text_ai_filter": bool(
-                        self.config.get("enable_text_ai_filter", True)
+                        self._get_setting("enable_text_ai_filter", True)
                     ),
                     "text_filter_prompt": str(
-                        self.config.get(
+                        self._get_setting(
                             "text_filter_prompt",
                             "请判断这条推文是否值得推送：重要动态、有趣创作、高质量作品分享值得推送；纯广告、无意义水帖不值得推送。",
                         )
@@ -567,7 +578,7 @@ class TwitterRssPlugin(Star):
         self._digest_task = asyncio.create_task(self._digest_loop())
         rules = self._get_group_rules()
         total_accts = sum(len(self._get_rule_accounts(r)) for r in rules)
-        interval_min = max(2, int(self.config.get("poll_interval_minutes", 15) or 15))
+        interval_min = max(2, int(self._get_setting("poll_interval_minutes", 15) or 15))
         logger.info(
             f"[TwitterRSS] 插件后台服务已启动 | 分群规则数: {len(rules)} 个 | 累计订阅账号: {total_accts} 个 | 轮询间隔: {interval_min} 分钟"
         )
@@ -575,7 +586,7 @@ class TwitterRssPlugin(Star):
     async def _init_http_client(self):
         if self.http_client and not self.http_client.is_closed:
             await self.http_client.aclose()
-        proxy = str(self.config.get("http_proxy", "") or "").strip() or None
+        proxy = str(self._get_setting("http_proxy", "") or "").strip() or None
         headers = {
             "User-Agent": (
                 "AstrBot-TwitterRSS/1.3 (RSS Feed Reader; TelegramBot; "
@@ -643,7 +654,7 @@ class TwitterRssPlugin(Star):
                 delay = state.get("next", 0) - time.monotonic()
                 if delay > 0:
                     await asyncio.sleep(delay)
-                interval = max(0.3, float(self.config.get("request_interval_seconds", 1.5) or 1.5))
+                interval = max(0.3, float(self._get_setting("request_interval_seconds", 1.5) or 1.5))
                 state["next"] = time.monotonic() + interval
                 try:
                     resp = await self._http_get_with_recovery(url)
@@ -1102,6 +1113,38 @@ class TwitterRssPlugin(Star):
 
         return dirty
 
+    def _get_setting(self, key: str, default: Any = None) -> Any:
+        for section, (_, fields) in CONFIG_SECTIONS.items():
+            if key in fields:
+                values = self.config.get(section)
+                if isinstance(values, dict) and key in values:
+                    return values[key]
+                break
+        return self.config.get(key, default)
+
+    def _migrate_grouped_config(self) -> bool:
+        """Move legacy flat settings into sections, preserving saved values over new defaults."""
+        changed = False
+        for section, (_, fields) in CONFIG_SECTIONS.items():
+            for field in fields:
+                if field in self.config:
+                    if not isinstance(self.config.get(section), dict):
+                        self.config[section] = {}
+                    self.config[section][field] = self.config.pop(field)
+                    changed = True
+        return changed
+
+    @staticmethod
+    def _group_config_schema(schema: dict[str, Any]) -> None:
+        for section, (label, fields) in CONFIG_SECTIONS.items():
+            existing = schema.get(section, {}).get("items", {})
+            items = {}
+            for field in fields:
+                definition = schema.pop(field, existing.get(field))
+                if definition is not None:
+                    items[field] = definition
+            schema[section] = {"description": label, "type": "object", "items": items}
+
     def _sync_subscribed_accounts_to_schema(self):
         """
         为每个群聊生成可独立编辑的账号列表，每个账号保存四项推送策略。
@@ -1174,7 +1217,18 @@ class TwitterRssPlugin(Star):
                     logger.debug(f"[TwitterRSS] 保存单账号开关配置跳过: {save_err}")
 
             def _apply_options_to_schema_dict(s_dict: dict[str, Any]) -> bool:
+                original_schema = copy.deepcopy(s_dict)
                 changed_flag = False
+                s_dict["include_external_links"] = {
+                    "description": "推送时附带站外链接", "type": "bool", "default": True,
+                    "hint": "自动附带推文正文、RSS 超链接及引用推文中的站外 HTTP(S) 链接，以可点击文本发送并去重。排除 X/Twitter、自有媒体域名及常见推特镜像；短链优先使用订阅源提供的展开地址。",
+                }
+                test_field = copy.deepcopy(s_dict.get("test_push_tweet_count") or s_dict.get("fetch_config", {}).get("items", {}).get("test_push_tweet_count", {}))
+                test_field.update({
+                    "description": "随机测试默认抽取总条数", "type": "int", "default": 3,
+                    "hint": "执行 /tw test 时随机抽取的总条数。/tw test 3 随机抽取合计 3 条；/tw test <账号> 2 从指定账号随机抽取 2 条。沿用本群筛选规则，实际推送数可能少于抽取数。",
+                })
+                s_dict["test_push_tweet_count"] = test_field
                 concurrency_fields = {
                     "fetch_concurrency": {
                         "description": "订阅抓取并发数", "type": "int", "default": 4,
@@ -1276,7 +1330,8 @@ class TwitterRssPlugin(Star):
                                 changed_flag = True
                 except Exception:
                     pass
-                return changed_flag
+                self._group_config_schema(s_dict)
+                return s_dict != original_schema
 
             # 1. 更新内存中的 config.schema 及 AstrBot StarMetadata.config_schema（实时生效无需重启）
             mem_schema = getattr(self.config, "schema", None)
@@ -1307,7 +1362,7 @@ class TwitterRssPlugin(Star):
             logger.debug(f"[TwitterRSS] 同步已订阅账号至下拉选项跳过: {e}")
 
     def _get_group_rules(self) -> list[dict[str, Any]]:
-        raw = self.config.get("group_subscriptions", [])
+        raw = self._get_setting("group_subscriptions", [])
         if not isinstance(raw, list):
             return []
         return [
@@ -1319,7 +1374,7 @@ class TwitterRssPlugin(Star):
 
     def _get_account_rule_cards(self) -> list[dict[str, Any]]:
         """获取在 group_subscriptions 中添加的所有【单账号独立推送开关 (account_rule)】卡片"""
-        raw = self.config.get("group_subscriptions", [])
+        raw = self._get_setting("group_subscriptions", [])
         cards: list[dict[str, Any]] = []
         if isinstance(raw, list):
             for r in raw:
@@ -1459,7 +1514,7 @@ class TwitterRssPlugin(Star):
         return str(tweet.get("username", "")).casefold() in accounts or bool(tags & matched_tags)
 
     def _build_hashtag_search_url(self, tag: str, template: str | None = None) -> str:
-        template = str((self.config.get("hashtag_search_url", "") if template is None else template) or "").strip()
+        template = str((self._get_setting("hashtag_search_url", "") if template is None else template) or "").strip()
         if not template:
             template = DEFAULT_HASHTAG_SEARCH_URL
         if "{query}" not in template or urlsplit(template).scheme not in ("http", "https"):
@@ -1467,11 +1522,11 @@ class TwitterRssPlugin(Star):
         return template.replace("{query}", quote("#" + tag, safe=""))
 
     def _get_hashtag_search_urls(self, tag: str) -> list[str]:
-        fallbacks = self.config.get("hashtag_search_fallback_urls", DEFAULT_HASHTAG_FALLBACK_URLS)
+        fallbacks = self._get_setting("hashtag_search_fallback_urls", DEFAULT_HASHTAG_FALLBACK_URLS)
         if not isinstance(fallbacks, list):
             logger.warning("[TwitterRSS] hashtag_search_fallback_urls 必须为列表，已跳过回退配置")
             fallbacks = []
-        templates = [self.config.get("hashtag_search_url") or DEFAULT_HASHTAG_SEARCH_URL, *fallbacks]
+        templates = [self._get_setting("hashtag_search_url") or DEFAULT_HASHTAG_SEARCH_URL, *fallbacks]
         urls = []
         for template in templates:
             if not isinstance(template, str) or not template.strip():
@@ -1565,15 +1620,15 @@ class TwitterRssPlugin(Star):
             except Exception as e:
                 logger.error(f"[TwitterRSS] 定时轮询推文异常: {e}")
 
-            interval_min = max(2, int(self.config.get("poll_interval_minutes", 15) or 15))
+            interval_min = max(2, int(self._get_setting("poll_interval_minutes", 15) or 15))
             await asyncio.sleep(interval_min * 60)
 
     async def _digest_loop(self):
         await asyncio.sleep(15)
         while self._started:
             try:
-                if self.config.get("enable_daily_digest", True):
-                    target_time = str(self.config.get("daily_digest_time", "08:30") or "08:30").strip()
+                if self._get_setting("enable_daily_digest", True):
+                    target_time = str(self._get_setting("daily_digest_time", "08:30") or "08:30").strip()
                     now = datetime.datetime.now()
                     now_hm = now.strftime("%H:%M")
                     today_str = now.strftime("%Y-%m-%d")
@@ -1619,7 +1674,7 @@ class TwitterRssPlugin(Star):
         if account_or_url.startswith(("http://", "https://")):
             return account_or_url
         base = str(
-            self.config.get("rss_base_url", "https://fxtwitter.com/{username}/feed.xml")
+            self._get_setting("rss_base_url", "https://fxtwitter.com/{username}/feed.xml")
             or "https://fxtwitter.com/{username}/feed.xml"
         ).strip()
         if "rsshub.app/twitter/" in base:
@@ -1638,7 +1693,7 @@ class TwitterRssPlugin(Star):
         primary = self._build_rss_url(username)
         candidates = [primary]
 
-        if self.config.get("enable_multi_source_fallback", True):
+        if self._get_setting("enable_multi_source_fallback", True):
             for tmpl in FALLBACK_SOURCE_TEMPLATES:
                 u = self._format_template_url(tmpl, username)
                 if u not in candidates:
@@ -1710,7 +1765,7 @@ class TwitterRssPlugin(Star):
                 changed = True
 
         # 同步清理旧版全局顶层列表（若存在）
-        legacy_accts = self._clean_str_list(self.config.get("twitter_accounts", []))
+        legacy_accts = self._clean_str_list(self._get_setting("twitter_accounts", []))
         if any(a.lstrip("@").lower() == acct_lower for a in legacy_accts):
             self.config["twitter_accounts"] = [
                 a for a in legacy_accts if a.lstrip("@").lower() != acct_lower
@@ -1718,8 +1773,8 @@ class TwitterRssPlugin(Star):
             changed = True
 
         if not self.state.get("migrated_skip_rt_v142"):
-            self.config["skip_retweets"] = True
-            for r in self.config.get("group_subscriptions", []):
+            self.config.setdefault("global_push_config", {})["skip_retweets"] = True
+            for r in self._get_setting("group_subscriptions", []):
                 if isinstance(r, dict) and "skip_retweets" not in r:
                     r["skip_retweets"] = True
             self.state["migrated_skip_rt_v142"] = True
@@ -1986,6 +2041,7 @@ class TwitterRssPlugin(Star):
                         "author_name": q_name,
                         "avatar_url": q_avatar,
                         "text": q_text,
+                        "external_links": self._tweet_external_links(tw),
                         "images": q_imgs,
                         "video_urls": q_vids,
                         "has_video": q_has_vid,
@@ -2124,6 +2180,56 @@ class TwitterRssPlugin(Star):
             "quote_data": q_data,
         }
 
+    @staticmethod
+    def _extract_external_links(text: str = "", raw_html: str = "") -> list[str]:
+        anchors = re.findall(r'''\bhref\s*=\s*["'](https?://[^"']+)["']''', raw_html, flags=re.I)
+        candidates = re.findall(r'''https?://[^\s<>"'，。！？；、【】「」『』]+''', html.unescape(str(text or "")), flags=re.I)
+        excluded = {"x.com", "twitter.com", "t.co", "twimg.com", "fxtwitter.com", "fixupx.com", "vxtwitter.com", "fixvx.com", "twitfix.com", "xcancel.com"}
+        links = []
+        for raw in candidates + anchors:
+            url = html.unescape(raw).rstrip(".,;:!?，。！？；：）】")
+            while url.endswith(")") and url.count(")") > url.count("("):
+                url = url[:-1]
+            try:
+                parts = urlsplit(url)
+                host = (parts.hostname or "").lower().rstrip(".")
+                if parts.scheme.lower() not in {"http", "https"} or not host:
+                    continue
+            except ValueError:
+                continue
+            if any(host == domain or host.endswith(f".{domain}") for domain in excluded) or host.startswith("nitter."):
+                continue
+            if url not in links:
+                links.append(url)
+        return links
+
+    @classmethod
+    def _tweet_external_links(cls, tweet: dict[str, Any]) -> list[str]:
+        """Collect original content/expanded entity links, never model-generated translations or media URLs."""
+        links = []
+        def add(value):
+            if isinstance(value, str):
+                for url in cls._extract_external_links(value):
+                    if url not in links:
+                        links.append(url)
+            elif isinstance(value, list):
+                for item in value:
+                    add(item)
+            elif isinstance(value, dict):
+                expanded = value.get("unwound_url") or value.get("expanded_url") or value.get("url")
+                if expanded:
+                    add(expanded)
+                for key in ("text", "urls", "facets", "features", "replacement", "uri"):
+                    if key in value:
+                        add(value[key])
+        for field in ("external_links", "text", "full_text", "orig_body", "raw_text", "entities"):
+            add(tweet.get(field))
+        for field in ("quote_data", "quote_info", "quote", "retweeted_status"):
+            nested = tweet.get(field)
+            if isinstance(nested, dict):
+                add(cls._tweet_external_links(nested))
+        return links
+
     def _parse_fxtwitter_json(self, json_text: str, account: str) -> list[dict[str, Any]]:
         try:
             data = json.loads(json_text)
@@ -2234,6 +2340,7 @@ class TwitterRssPlugin(Star):
                     "avatar_url": safe_avatar,
                     "title": rt_analysis["clean_text"][:60],
                     "text": rt_analysis["clean_text"],
+                    "external_links": self._tweet_external_links(st),
                     "images": images,
                     "video_urls": video_urls,
                     "has_video": has_video,
@@ -2355,6 +2462,7 @@ class TwitterRssPlugin(Star):
                     "avatar_url": "",
                     "title": title,
                     "text": rt_analysis["clean_text"],
+                    "external_links": self._extract_external_links(clean_text, raw_html),
                     "images": images,
                     "video_urls": video_urls,
                     "has_video": has_video,
@@ -2775,23 +2883,23 @@ class TwitterRssPlugin(Star):
         - text (纯文字): 默认由 default_push_text 决定（默认 True）
         - image (图片): 默认由 default_push_image 决定（默认 True）
         """
-        if "default_push_retweet" in self.config:
-            def_rt = bool(self.config.get("default_push_retweet", False))
+        if self._get_setting("default_push_retweet") is not None:
+            def_rt = bool(self._get_setting("default_push_retweet", False))
         else:
             skip_rt = bool(
-                group_rule.get("skip_retweets", self.config.get("skip_retweets", True))
+                group_rule.get("skip_retweets", self._get_setting("skip_retweets", True))
                 if isinstance(group_rule, dict) and "skip_retweets" in group_rule
-                else self.config.get("skip_retweets", True)
+                else self._get_setting("skip_retweets", True)
             )
             def_rt = not skip_rt
 
-        if "default_push_reply" in self.config:
-            def_rep = bool(self.config.get("default_push_reply", False))
+        if self._get_setting("default_push_reply") is not None:
+            def_rep = bool(self._get_setting("default_push_reply", False))
         else:
-            def_rep = not bool(self.config.get("skip_replies", True))
+            def_rep = not bool(self._get_setting("skip_replies", True))
 
-        def_text = bool(self.config.get("default_push_text", True))
-        def_image = bool(self.config.get("default_push_image", True))
+        def_text = bool(self._get_setting("default_push_text", True))
+        def_image = bool(self._get_setting("default_push_image", True))
 
         return {
             "retweet": def_rt,
@@ -3008,6 +3116,9 @@ class TwitterRssPlugin(Star):
             if rt_user and rt_sid:
                 rt_detail = await self._fetch_single_status_cached(rt_user, rt_sid)
                 if rt_detail:
+                    prepared["external_links"] = list(dict.fromkeys(
+                        prepared.get("external_links", []) + self._tweet_external_links(rt_detail)
+                    ))
                     prepared["username"] = rt_detail["username"]
                     prepared["author_name"] = rt_detail["author_name"]
                     prepared["avatar_url"] = rt_detail["avatar_url"]
@@ -3049,6 +3160,7 @@ class TwitterRssPlugin(Star):
                     "avatar_url": str(qa.get("avatar_url") or qa.get("profile_image_url_https") or "").strip(),
                     "text": str(qd.get("text") or qd.get("full_text") or "").strip(),
                     "images": q_imgs,
+                    "external_links": self._tweet_external_links(qd),
                 }
             if q_detail:
                 q_body, q_tags = self._split_tweet_body_and_tags(q_detail.get("text", ""))
@@ -3067,6 +3179,7 @@ class TwitterRssPlugin(Star):
                     "author_initial": q_aname[:1].upper(),
                     "avatar_src": q_avatar_src,
                     "orig_body": q_body,
+                    "external_links": self._tweet_external_links(q_detail),
                     "orig_tags": q_tags,
                     "display_images": q_disp_imgs,
                 }
@@ -3233,8 +3346,8 @@ class TwitterRssPlugin(Star):
         exclude_tags = self._clean_str_list(group_rule.get("exclude_image_tags", []))
 
         vision_provider_id = str(
-            self.config.get("vision_provider_id", "")
-            or self.config.get("text_provider_id", "")
+            self._get_setting("vision_provider_id", "")
+            or self._get_setting("text_provider_id", "")
             or ""
         ).strip()
 
@@ -3323,7 +3436,7 @@ class TwitterRssPlugin(Star):
         self, prepared_tweet: dict[str, Any], group_rule: dict[str, Any]
     ) -> dict[str, Any]:
         """根据指定群聊的文本筛选标准评估推文并翻译正文与标签"""
-        text_provider_id = str(self.config.get("text_provider_id", "") or "").strip()
+        text_provider_id = str(self._get_setting("text_provider_id", "") or "").strip()
         custom_criteria = str(
             group_rule.get("text_filter_prompt")
             or "请判断该推文是否具有推送价值。"
@@ -3387,7 +3500,7 @@ class TwitterRssPlugin(Star):
         if not orig_body and not orig_tags:
             return {"translated_body": "", "translated_tags": []}
 
-        text_provider_id = str(self.config.get("text_provider_id", "") or "").strip()
+        text_provider_id = str(self._get_setting("text_provider_id", "") or "").strip()
         system_prompt = "你是一个专业的推文直译助手。请直接将推文正文与标签翻译为中文，严格返回 JSON 对象。"
         prompt = (
             f"原推文正文: {json.dumps(orig_body, ensure_ascii=False)}\n"
@@ -3440,7 +3553,7 @@ class TwitterRssPlugin(Star):
         has_images = len(enriched.get("local_images", [])) > 0
         vision_enabled = bool(group_rule.get("enable_vision_tag_filter", True))
         text_ai_enabled = bool(group_rule.get("enable_text_ai_filter", True))
-        bypass_text = bool(self.config.get("image_tweet_bypass_text_filter", True))
+        bypass_text = bool(self._get_setting("image_tweet_bypass_text_filter", True))
 
         if has_images and vision_enabled:
             v_res = await self._evaluate_vision_for_group(enriched, group_rule)
@@ -3612,11 +3725,13 @@ class TwitterRssPlugin(Star):
         )
         rendered_card_path = await self._render_html_to_image(TWEET_CARD_TMPL, render_payload)
         raw_images = enriched_tweet.get("local_images", [])
-        send_mode = str(self.config.get("push_send_mode", "separate_messages") or "separate_messages")
+        external_links = self._tweet_external_links(enriched_tweet) if self._get_setting("include_external_links", True) else []
+        link_components = [Comp.Plain("\n站外链接：\n" + "\n".join(external_links))] if external_links else []
+        send_mode = str(self._get_setting("push_send_mode", "separate_messages") or "separate_messages")
 
         # 合并转发判断：当开启 enable_merge_forward_over_3 且（原图数 > 3 或 渲染卡+原图总数 > 3）时，使用合并转发
-        enable_merge_forward = bool(self.config.get("enable_merge_forward_over_3", True))
-        merge_threshold = max(1, int(self.config.get("merge_forward_image_threshold", 3) or 3))
+        enable_merge_forward = bool(self._get_setting("enable_merge_forward_over_3", True))
+        merge_threshold = max(1, int(self._get_setting("merge_forward_image_threshold", 3) or 3))
         total_img_count = 1 + len(raw_images)  # 1张渲染推文卡 + N张原图
         use_merge_forward = enable_merge_forward and (
             len(raw_images) > merge_threshold or total_img_count > merge_threshold
@@ -3625,7 +3740,7 @@ class TwitterRssPlugin(Star):
         try:
             if use_merge_forward:
                 sender_name = f"{author_name} (@{enriched_tweet.get('username', 'X')})"
-                bot_uin = str(self.config.get("merge_forward_uin", "10000") or "10000").strip()
+                bot_uin = str(self._get_setting("merge_forward_uin", "10000") or "10000").strip()
                 if not bot_uin.isdigit():
                     bot_uin = "10000"
 
@@ -3644,7 +3759,7 @@ class TwitterRssPlugin(Star):
                             Comp.Node(
                                 uin=int(bot_uin),
                                 name=sender_name,
-                                content=[self._make_image_comp(rendered_card_path)],
+                                content=[self._make_image_comp(rendered_card_path)] + link_components,
                             )
                         ]
                         for raw_img in raw_images:
@@ -3676,6 +3791,7 @@ class TwitterRssPlugin(Star):
                 chain_comps = [self._make_image_comp(rendered_card_path)]
                 for raw_img in raw_images:
                     chain_comps.append(self._make_image_comp(raw_img))
+                chain_comps.extend(link_components)
                 await self.context.send_message(umo, MessageChain(chain_comps))
                 return
 
@@ -3683,10 +3799,11 @@ class TwitterRssPlugin(Star):
                 chain_comps = [self._make_image_comp(rendered_card_path)]
                 for raw_img in raw_images:
                     chain_comps.append(self._make_image_comp(raw_img))
+                chain_comps.extend(link_components)
                 await self.context.send_message(umo, MessageChain(chain_comps))
             else:
                 await self.context.send_message(
-                    umo, MessageChain([self._make_image_comp(rendered_card_path)])
+                    umo, MessageChain([self._make_image_comp(rendered_card_path)] + link_components)
                 )
                 for raw_img in raw_images:
                     await asyncio.sleep(0.6)
@@ -3712,14 +3829,14 @@ class TwitterRssPlugin(Star):
             stats = {"fetched": 0, "new": 0, "pushed": 0}
             if not rules:
                 return stats
-            fetch_limit = max(1, min(12, int(self.config.get("fetch_concurrency", 4) or 4)))
-            process_limit = max(1, min(8, int(self.config.get("processing_concurrency", 3) or 3)))
+            fetch_limit = max(1, min(12, int(self._get_setting("fetch_concurrency", 4) or 4)))
+            process_limit = max(1, min(8, int(self._get_setting("processing_concurrency", 3) or 3)))
             fetch_slots = asyncio.Semaphore(fetch_limit)
             process_slots = asyncio.Semaphore(process_limit)
             media_slots = asyncio.Semaphore(process_limit)
             seen_map = self.state.setdefault("seen_ids", {})
             init_keys = self.state.setdefault("initialized_keys", [])
-            first_run_mark_seen = bool(self.config.get("first_run_mark_seen", True))
+            first_run_mark_seen = bool(self._get_setting("first_run_mark_seen", True))
             history = {self._tweet_identity(t): t for t in self.history_tweets}
             prepared_tasks: dict[str, asyncio.Task] = {}
             subscribers: dict[str, list[asyncio.Queue]] = {}
@@ -3889,77 +4006,92 @@ class TwitterRssPlugin(Star):
     async def test_push_for_group(
         self,
         group_rule: dict[str, Any],
-        limit_per_account: int = 3,
+        limit: int = 3,
         target_account: str = "",
-    ) -> dict[str, int]:
-        """
-        按当前群聊的独立订阅与独立标签过滤规则，获取每个账号过去的 N 条推文（默认 3 条）进行筛选并推送
-        """
+    ) -> dict[str, Any]:
+        """Randomly sample a total of N tweets; fetch only enough shuffled subscriptions."""
+        if limit < 1:
+            raise ValueError("测试条数必须为正整数")
         async with self._lock:
             umo = self._resolve_target_umo(group_rule.get("target_umo", ""))
             if target_account.strip():
-                accounts = [target_account.strip().lstrip("@")]
+                sources = [(target_account.strip().lstrip("@"), False)]
             else:
-                accounts = self._get_rule_accounts(group_rule)
-
-            stats: dict[str, Any] = {
-                "accounts": len(accounts),
-                "fetched": 0,
-                "evaluated": 0,
-                "pushed": 0,
-                "filtered": 0,
-                "removed_accounts": [],
-            }
-            if not accounts or not umo:
+                sources = [(a, False) for a in self._get_rule_accounts(group_rule)]
+                sources += [(f"#{tag}", True) for tag in self._get_rule_hashtags(group_rule)]
+            stats = {"accounts": 0, "subscriptions": 0, "fetched": 0, "sampled": 0,
+                     "evaluated": 0, "pushed": 0, "filtered": 0, "failed": 0, "removed_accounts": []}
+            if not sources or not umo:
                 return stats
+            random.shuffle(sources)
+            concurrency = max(1, min(12, int(self._get_setting("fetch_concurrency", 4) or 4)))
+            pool = {}
 
-            seen_map: dict[str, list[str]] = self.state.setdefault("seen_ids", {})
-            existing_hist_map = {h["id"]: h for h in self.history_tweets}
-
-            req_delay = max(0.3, float(self.config.get("request_interval_seconds", 1.5) or 1.5))
-            for idx_acct, account in enumerate(list(accounts)):
-                if idx_acct > 0:
-                    await asyncio.sleep(req_delay + random.uniform(0.1, 0.6))
-                tweets = await self._fetch_account_tweets(account)
+            async def fetch_source(account, is_hashtag):
+                stats["subscriptions"] += 1
+                if not is_hashtag:
+                    stats["accounts"] += 1
+                try:
+                    tweets = await self._fetch_hashtag_tweets(account[1:]) if is_hashtag else await self._fetch_account_tweets(account)
+                except Exception as exc:
+                    logger.warning(f"[TwitterRSS] 测试抓取 {account} 失败: {exc}")
+                    return account, []
                 stats["fetched"] += len(tweets)
-                if not tweets:
-                    if account.strip().lstrip("@").lower() in self._not_found_accounts:
-                        self._auto_remove_invalid_account(account, target_rule=group_rule)
-                        stats["removed_accounts"].append(account)
-                    continue
+                if not tweets and not is_hashtag and account.strip().lstrip("@").lower() in self._not_found_accounts:
+                    self._auto_remove_invalid_account(account, target_rule=group_rule)
+                    stats["removed_accounts"].append(account)
+                return account, tweets
 
-                valid_tweets = [
-                    t for t in tweets if not self._should_skip_tweet(t, group_rule)
-                ]
-                past_tweets = valid_tweets[-limit_per_account:]
-                state_key = f"{umo}::{account}"
-                acct_seen = set(seen_map.get(state_key, []))
+            offset = 0
+            while offset < len(sources) and len(pool) < limit:
+                batch_size = min(concurrency, limit - len(pool), len(sources) - offset)
+                batch = sources[offset:offset + batch_size]
+                offset += batch_size
+                tasks = [asyncio.create_task(fetch_source(*source)) for source in batch]
+                try:
+                    results = await asyncio.gather(*tasks)
+                finally:
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                for account, tweets in results:
+                    for tweet in tweets:
+                        identity = self._tweet_identity(tweet)
+                        if identity not in pool and not self._should_skip_tweet(tweet, group_rule):
+                            pool[identity] = (account, tweet)
 
-                for tweet in past_tweets:
+            selected = random.sample(list(pool.values()), min(limit, len(pool)))
+            stats["sampled"] = len(selected)
+            seen_map = self.state.setdefault("seen_ids", {})
+            history = {self._tweet_identity(tweet): tweet for tweet in self.history_tweets}
+            try:
+                for account, tweet in selected:
                     stats["evaluated"] += 1
-                    acct_seen.add(tweet["id"])
-
-                    prepared = await self._prepare_tweet_media(tweet)
-                    worth, enriched = await self.evaluate_tweet_for_group(
-                        prepared, group_rule
-                    )
-
-                    if tweet["id"] not in existing_hist_map:
-                        rec = dict(tweet)
-                        rec["ai_summary"] = enriched.get("translated_body", "")
-                        self.history_tweets.append(rec)
-                        existing_hist_map[tweet["id"]] = rec
-
-                    if worth:
-                        await self.push_tweet_to_umo(enriched, umo)
-                        stats["pushed"] += 1
-                    else:
-                        stats["filtered"] += 1
-
-                seen_map[state_key] = list(acct_seen)[-300:]
-
-            await self._save_state()
-            await self._save_history()
+                    try:
+                        prepared = await self._prepare_tweet_media(copy.deepcopy(tweet))
+                        worth, enriched = await self.evaluate_tweet_for_group(prepared, group_rule)
+                        if worth:
+                            if await self.push_tweet_to_umo(enriched, umo) is False:
+                                raise RuntimeError("推送失败")
+                            stats["pushed"] += 1
+                        else:
+                            stats["filtered"] += 1
+                        identity = self._tweet_identity(tweet)
+                        if identity not in history:
+                            history[identity] = copy.deepcopy(tweet)
+                            self.history_tweets.append(history[identity])
+                        history[identity]["ai_summary"] = enriched.get("translated_body", "")
+                        key = account if account.startswith(("http://", "https://")) else account.casefold()
+                        state_key = f"{umo}::{key}"
+                        seen_map[state_key] = list(dict.fromkeys(seen_map.get(state_key, []) + [tweet["id"]]))[-300:]
+                        await self._save_state()
+                    except Exception as exc:
+                        stats["failed"] += 1
+                        logger.error(f"[TwitterRSS] 测试处理推文 {tweet.get('id')} 失败: {exc}")
+            finally:
+                await self._save_state()
+                await self._save_history()
             return stats
 
     async def run_daily_digest(
@@ -3982,12 +4114,12 @@ class TwitterRssPlugin(Star):
         if not any(t.get("timestamp", 0) >= cutoff for t in self.history_tweets):
             await self.check_all_accounts(manual=False)
 
-        max_items = max(3, int(self.config.get("daily_digest_max_items", 8) or 8))
+        max_items = max(3, int(self._get_setting("daily_digest_max_items", 8) or 8))
         digest_prompt_cfg = str(
-            self.config.get("daily_digest_prompt", "")
+            self._get_setting("daily_digest_prompt", "")
             or "请从过去24小时的推文中精选重要动态，整理为今日要闻简讯。"
         ).strip()
-        text_provider_id = str(self.config.get("text_provider_id", "") or "").strip()
+        text_provider_id = str(self._get_setting("text_provider_id", "") or "").strip()
 
         pushed_any = False
         last_img_path = ""
@@ -4489,7 +4621,7 @@ class TwitterRssPlugin(Star):
         must_tags = self._clean_str_list(rule.get("must_include_image_tags", []))
         any_tags = self._clean_str_list(rule.get("any_include_image_tags", []))
         exc_tags = self._clean_str_list(rule.get("exclude_image_tags", []))
-        test_count = max(1, int(self.config.get("test_push_tweet_count", 3) or 3))
+        test_count = max(1, int(self._get_setting("test_push_tweet_count", 3) or 3))
         all_rules = self._get_group_rules()
         g_defs = self._get_global_type_defaults(rule)
 
@@ -4510,8 +4642,8 @@ class TwitterRssPlugin(Star):
             f"  - 禁止包含标签 (排除): {', '.join(exc_tags) if exc_tags else '无'}\n"
             f"• 本群文本价值判断: {'开启' if rule.get('enable_text_ai_filter', True) else '关闭'}\n"
             f"• 本群每日24h简报: {'开启' if rule.get('enable_daily_digest', True) else '关闭'} "
-            f"(时间点: {self.config.get('daily_digest_time', '08:30')})\n"
-            f"• 测试推送条数: 每账号过去 {test_count} 条 | 全局已配置群聊总数: {len(all_rules)} 个"
+            f"(时间点: {self._get_setting('daily_digest_time', '08:30')})\n"
+            f"• 随机测试条数: 合计 {test_count} 条 | 全局已配置群聊总数: {len(all_rules)} 个"
         )
         yield event.plain_result(msg)
 
@@ -4691,55 +4823,45 @@ class TwitterRssPlugin(Star):
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("test")
-    async def tw_test(self, event: AstrMessageEvent, account: str = ""):
-        """测试推送：按本群独立规则获取每个订阅账号过去的N条推文（默认3条）进行筛选并推送"""
+    async def tw_test(self, event: AstrMessageEvent, account: str = "", count: str = ""):
+        """随机测试：/tw test [条数] 或 /tw test <账号> [条数]。"""
         if not self._has_admin_permission(event):
             yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
             return
+        target_acct = account.strip()
+        count_arg = count.strip()
+        if not count_arg and re.fullmatch(r"[+-]?[0-9]+", target_acct):
+            count_arg, target_acct = target_acct, ""
+        try:
+            limit = int(count_arg) if count_arg else int(self._get_setting("test_push_tweet_count", 3) or 3)
+            if limit < 1:
+                raise ValueError
+        except (ValueError, TypeError):
+            yield event.plain_result("⚠️ 条数必须为正整数。用法：`/tw test 3` 或 `/tw test <账号> 2`。")
+            return
+        target_acct = target_acct.lstrip("@")
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
-        limit = max(1, int(self.config.get("test_push_tweet_count", 3) or 3))
-        target_acct = account.strip().lstrip("@") if account else ""
-        accounts = [target_acct] if target_acct else self._get_rule_accounts(rule)
-
-        if not accounts:
-            yield event.plain_result(
-                "当前群聊还没有订阅任何推特账号，请先使用 `/tw add <账号名>` 添加，或直接发送 `/tw test <账号名>` 测试指定账号。"
-            )
+        if not target_acct and not (self._get_rule_accounts(rule) or self._get_rule_hashtags(rule)):
+            yield event.plain_result("当前群聊没有订阅账号或标签。请先添加订阅，或使用 `/tw test <账号> 2` 测试指定账号。")
             return
-
-        scope_desc = f"账号 @{target_acct}" if target_acct else f"本群全部 {len(accounts)} 个订阅账号"
+        scope = f"账号 @{target_acct}" if target_acct else "本群订阅账号与标签"
         yield event.plain_result(
-            f"🧪 开始本群测试推送：正在获取 {scope_desc} 各自过去的 {limit} 条推文，并按本群【{rule.get('group_name')}】的标签过滤规则进行筛选推送，请稍候..."
+            f"🧪 正在从{scope}随机抽取合计 {limit} 条推文，按本群【{rule.get('group_name')}】规则筛选后推送，请稍候..."
         )
-
-        stats = await self.test_push_for_group(
-            group_rule=rule,
-            limit_per_account=limit,
-            target_account=target_acct,
-        )
-        removed_list = stats.get("removed_accounts") or []
-        removed_tip = (
-            f"\n• 🗑️ 自动移除不存在的 ID: {', '.join('@' + a for a in removed_list)}"
-            if removed_list
-            else ""
-        )
+        stats = await self.test_push_for_group(group_rule=rule, limit=limit, target_account=target_acct)
         if stats["fetched"] == 0:
-            if removed_list:
-                yield event.plain_result(
-                    f"🗑️ 检测到以下推特 ID 不存在，已自动从本群【{rule.get('group_name')}】订阅列表中移除：{', '.join('@' + a for a in removed_list)}"
-                )
-                return
-            yield event.plain_result(
-                "⚠️ 未能从任何订阅源获取到推文。如果您处于国内网络环境，请在插件配置的 `http_proxy` 项填入本地代理地址（例如 `http://127.0.0.1:7890`）后重试。"
-            )
+            removed = stats.get("removed_accounts", [])
+            tip = f"已自动移除不存在的账号：{'、'.join(removed)}。" if removed else "请检查订阅源与网络配置。"
+            yield event.plain_result(f"⚠️ 未获取到推文。{tip}")
             return
-
+        shortage = f"\n• 当前可用候选不足 {limit} 条，本次抽取 {stats['sampled']} 条" if stats["sampled"] < limit else ""
         yield event.plain_result(
-            f"✅ 本群【{rule.get('group_name')}】测试推送完成！\n"
-            f"• 检查账号数: {stats['accounts']} 个\n"
-            f"• 获取并评估历史推文: {stats['evaluated']} 条（每个账号最多取过去 {limit} 条）\n"
-            f"• 通过本群规则并渲染推送: {stats['pushed']} 条\n"
-            f"• 未通过本群规则被拦截: {stats['filtered']} 条{removed_tip}"
+            f"✅ 本群【{rule.get('group_name')}】随机测试完成！\n"
+            f"• 检查订阅数: {stats['subscriptions']} 个\n"
+            f"• 随机抽取并评估: {stats['evaluated']} 条（合计最多 {limit} 条）\n"
+            f"• 通过规则并推送: {stats['pushed']} 条\n"
+            f"• 被筛选拦截: {stats['filtered']} 条\n"
+            f"• 处理失败: {stats['failed']} 条{shortage}"
         )
 
     @filter.permission_type(filter.PermissionType.ADMIN)
