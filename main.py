@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import colorsys
+import copy
 import datetime
 import email.utils
 import hashlib
@@ -32,7 +33,7 @@ from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, StarTools, register
 
 # 直接内嵌最新 HTML 模板，确保在 AstrBot 热重载 main.py 时不会因 sys.modules 缓存旧的 templates.py 而导致样式不更新
-TWEET_CARD_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #0f172a;\n    -webkit-font-smoothing: antialiased;\n  }\n  .card {\n    width: 100%;\n    background: #ffffff;\n    padding: 28px 32px;\n  }\n  .retweet-banner {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    margin-bottom: 12px;\n    padding-left: 8px;\n    font-size: 13.5px;\n    font-weight: 700;\n    color: #059669;\n  }\n  .retweet-icon {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 20px;\n    height: 20px;\n    border-radius: 6px;\n    background: rgba(16, 185, 129, 0.12);\n    color: #059669;\n    font-size: 13px;\n    font-weight: 900;\n  }\n  .retweet-mini-avatar {\n    width: 20px;\n    height: 20px;\n    border-radius: 50%;\n    overflow: hidden;\n    background: #10b981;\n    flex-shrink: 0;\n    border: 1px solid #d1fae5;\n  }\n  .retweet-mini-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .header {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    margin-bottom: 16px;\n  }\n  .author-box {\n    display: flex;\n    align-items: center;\n    gap: 14px;\n  }\n  .avatar {\n    width: 52px;\n    height: 52px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 22px;\n    font-weight: 700;\n    overflow: hidden;\n    flex-shrink: 0;\n    border: 1px solid #e2e8f0;\n  }\n  .avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n  }\n  .author-meta {\n    display: flex;\n    flex-direction: column;\n    gap: 3px;\n  }\n  .author-name-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n  }\n  .author-name {\n    font-size: 19px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .verified-badge {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 18px;\n    height: 18px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 11px;\n    font-weight: 900;\n  }\n  .author-sub {\n    font-size: 14px;\n    color: #64748b;\n    font-weight: 500;\n  }\n  .brand-logo {\n    width: 34px;\n    height: 34px;\n    border-radius: 9px;\n    background: #0f172a;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 19px;\n    font-weight: 900;\n  }\n  .tweet-section {\n    margin-bottom: 12px;\n  }\n  .tweet-body {\n    font-size: 18px;\n    line-height: 1.65;\n    color: #0f172a;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .tweet-tags {\n    margin-top: 4px;\n    font-size: 17px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .trans-section {\n    margin-top: 8px;\n    margin-bottom: 14px;\n    padding-top: 10px;\n    border-top: 1px solid #f1f5f9;\n  }\n  .trans-body {\n    font-size: 16.5px;\n    line-height: 1.65;\n    color: #334155;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .trans-tags {\n    margin-top: 4px;\n    font-size: 16.5px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .media-grid {\n    display: grid;\n    gap: 10px;\n    margin-top: 12px;\n    border-radius: 16px;\n    overflow: hidden;\n  }\n  .media-grid.count-1 {\n    grid-template-columns: 1fr;\n  }\n  .media-grid.count-2, .media-grid.count-3, .media-grid.count-4 {\n    grid-template-columns: 1fr 1fr;\n  }\n  .media-item {\n    width: 100%;\n    overflow: hidden;\n    background: #f8fafc;\n    border-radius: 14px;\n    border: 1px solid #e2e8f0;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .media-grid.count-1 .media-item img {\n    width: 100%;\n    height: auto;\n    display: block;\n  }\n  .media-grid.count-2 .media-item img,\n  .media-grid.count-3 .media-item img,\n  .media-grid.count-4 .media-item img {\n    width: 100%;\n    height: 320px;\n    object-fit: cover;\n    display: block;\n  }\n  /* 引用转发 (Quote Tweet) 嵌套卡片样式 */\n  .quote-card {\n    margin-top: 14px;\n    border: 1.5px solid #cbd5e1;\n    border-radius: 16px;\n    background: #f8fafc;\n    padding: 16px 18px;\n    overflow: hidden;\n  }\n  .quote-header {\n    display: flex;\n    align-items: center;\n    gap: 9px;\n    margin-bottom: 8px;\n  }\n  .quote-avatar {\n    width: 26px;\n    height: 26px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 13px;\n    font-weight: 700;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    overflow: hidden;\n    flex-shrink: 0;\n  }\n  .quote-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .quote-author-name {\n    font-size: 15px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .quote-author-handle {\n    font-size: 13.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .quote-body {\n    font-size: 15.5px;\n    line-height: 1.58;\n    color: #1e293b;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .quote-tags {\n    margin-top: 4px;\n    font-size: 15px;\n    line-height: 1.55;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n</style>\n</head>\n<body>\n  <div class="card" id="tweet-card">\n    {% if is_retweet and retweeter_username %}\n    <div class="retweet-banner">\n      <span class="retweet-icon">↻</span>\n      {% if retweeter_avatar_src %}\n      <span class="retweet-mini-avatar">\n        <img src="{{ retweeter_avatar_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </span>\n      {% endif %}\n      <span>{{ retweeter_name }} (@{{ retweeter_username }}) 已转推</span>\n    </div>\n    {% endif %}\n\n    <div class="header">\n      <div class="author-box">\n        <div class="avatar">\n          {% if avatar_src %}\n          <img src="{{ avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ author_initial }}\';" />\n          {% else %}\n          {{ author_initial }}\n          {% endif %}\n        </div>\n        <div class="author-meta">\n          <div class="author-name-row">\n            <span class="author-name">{{ author_name }}</span>\n            <span class="verified-badge">✓</span>\n          </div>\n          <span class="author-sub">@{{ username }}{% if pub_date %} · {{ pub_date }}{% endif %}</span>\n        </div>\n      </div>\n      <div class="brand-logo">𝕏</div>\n    </div>\n\n    {% if orig_body or orig_tags %}\n    <div class="tweet-section">\n      {% if orig_body %}\n      <div class="tweet-body">{{ orig_body }}</div>\n      {% endif %}\n      {% if orig_tags %}\n      <div class="tweet-tags">{{ orig_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if translated_body or translated_tags %}\n    <div class="trans-section">\n      {% if orig_body and translated_body %}\n      <div class="trans-body">{{ translated_body }}</div>\n      {% endif %}\n      {% if translated_tags %}\n      <div class="trans-tags">{{ translated_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if quote_info %}\n    <div class="quote-card">\n      <div class="quote-header">\n        <div class="quote-avatar">\n          {% if quote_info.avatar_src %}\n          <img src="{{ quote_info.avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ quote_info.author_initial }}\';" />\n          {% else %}\n          {{ quote_info.author_initial }}\n          {% endif %}\n        </div>\n        <span class="quote-author-name">{{ quote_info.author_name }}</span>\n        <span class="quote-author-handle">@{{ quote_info.username }}</span>\n      </div>\n      {% if quote_info.orig_body %}\n      <div class="quote-body">{{ quote_info.orig_body }}</div>\n      {% endif %}\n      {% if quote_info.orig_tags %}\n      <div class="quote-tags">{{ quote_info.orig_tags|join(\' \') }}</div>\n      {% endif %}\n      {% if quote_info.display_images %}\n      <div class="media-grid count-{{ quote_info.display_images|length if quote_info.display_images|length <= 4 else 4 }}">\n        {% for img_src in quote_info.display_images[:4] %}\n        <div class="media-item">\n          <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% endfor %}\n      </div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if display_images %}\n    <div class="media-grid count-{{ display_images|length if display_images|length <= 4 else 4 }}">\n      {% for img_src in display_images[:4] %}\n      <div class="media-item">\n        <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </div>\n      {% endfor %}\n    </div>\n    {% endif %}\n  </div>\n</body>\n</html>\n'
+TWEET_CARD_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #0f172a;\n    -webkit-font-smoothing: antialiased;\n  }\n  .card {\n    width: 100%;\n    background: #ffffff;\n    padding: 28px 32px;\n  }\n  .retweet-banner {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    margin-bottom: 12px;\n    padding-left: 8px;\n    font-size: 13.5px;\n    font-weight: 700;\n    color: #059669;\n  }\n  .retweet-icon {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 20px;\n    height: 20px;\n    border-radius: 6px;\n    background: rgba(16, 185, 129, 0.12);\n    color: #059669;\n    font-size: 13px;\n    font-weight: 900;\n  }\n  .retweet-mini-avatar {\n    width: 20px;\n    height: 20px;\n    border-radius: 50%;\n    overflow: hidden;\n    background: #10b981;\n    flex-shrink: 0;\n    border: 1px solid #d1fae5;\n  }\n  .retweet-mini-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .header {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    margin-bottom: 16px;\n  }\n  .author-box {\n    display: flex;\n    align-items: center;\n    gap: 14px;\n  }\n  .avatar {\n    width: 52px;\n    height: 52px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 22px;\n    font-weight: 700;\n    overflow: hidden;\n    flex-shrink: 0;\n    border: 1px solid #e2e8f0;\n  }\n  .avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n  }\n  .author-meta {\n    display: flex;\n    flex-direction: column;\n    gap: 3px;\n  }\n  .author-name-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n  }\n  .author-name {\n    font-size: 19px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .verified-badge {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 18px;\n    height: 18px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 11px;\n    font-weight: 900;\n  }\n  .author-sub {\n    font-size: 14px;\n    color: #64748b;\n    font-weight: 500;\n  }\n  .brand-logo {\n    width: 34px;\n    height: 34px;\n    border-radius: 9px;\n    background: #0f172a;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 19px;\n    font-weight: 900;\n  }\n  .tweet-section {\n    margin-bottom: 12px;\n  }\n  .tweet-body {\n    font-size: 18px;\n    line-height: 1.65;\n    color: #0f172a;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .tweet-tags {\n    margin-top: 4px;\n    font-size: 17px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .trans-section {\n    margin-top: 8px;\n    margin-bottom: 14px;\n    padding-top: 10px;\n    border-top: 1px solid #f1f5f9;\n  }\n  .trans-body {\n    font-size: 16.5px;\n    line-height: 1.65;\n    color: #334155;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .trans-tags {\n    margin-top: 4px;\n    font-size: 16.5px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .media-grid {\n    display: grid;\n    gap: 10px;\n    margin-top: 12px;\n    border-radius: 16px;\n    overflow: hidden;\n  }\n  .media-grid.count-1 {\n    grid-template-columns: 1fr;\n  }\n  .media-grid.count-2, .media-grid.count-3, .media-grid.count-4 {\n    grid-template-columns: 1fr 1fr;\n  }\n  .media-item {\n    width: 100%;\n    overflow: hidden;\n    background: #f8fafc;\n    border-radius: 14px;\n    border: 1px solid #e2e8f0;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .media-grid.count-1 .media-item img {\n    width: 100%;\n    height: auto;\n    display: block;\n  }\n  .media-grid.count-2 .media-item img,\n  .media-grid.count-3 .media-item img,\n  .media-grid.count-4 .media-item img {\n    width: 100%;\n    height: 320px;\n    object-fit: cover;\n    display: block;\n  }\n  /* 引用转发 (Quote Tweet) 嵌套卡片样式 */\n  .quote-card {\n    margin-top: 14px;\n    border: 1.5px solid #cbd5e1;\n    border-radius: 16px;\n    background: #f8fafc;\n    padding: 16px 18px;\n    overflow: hidden;\n  }\n  .quote-header {\n    display: flex;\n    align-items: center;\n    gap: 9px;\n    margin-bottom: 8px;\n  }\n  .quote-avatar {\n    width: 26px;\n    height: 26px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 13px;\n    font-weight: 700;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    overflow: hidden;\n    flex-shrink: 0;\n  }\n  .quote-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .quote-author-name {\n    font-size: 15px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .quote-author-handle {\n    font-size: 13.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .quote-body {\n    font-size: 15.5px;\n    line-height: 1.58;\n    color: #1e293b;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .quote-tags {\n    margin-top: 4px;\n    font-size: 15px;\n    line-height: 1.55;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n</style>\n</head>\n<body>\n  <div class="card" id="tweet-card">\n    {% if is_retweet and retweeter_username %}\n    <div class="retweet-banner">\n      <span class="retweet-icon">↻</span>\n      {% if retweeter_avatar_src %}\n      <span class="retweet-mini-avatar">\n        <img src="{{ retweeter_avatar_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </span>\n      {% endif %}\n      <span>{{ retweeter_name }} (@{{ retweeter_username }}) 已转推</span>\n    </div>\n    {% endif %}\n\n    <div class="header">\n      <div class="author-box">\n        <div class="avatar">\n          {% if avatar_src %}\n          <img src="{{ avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ author_initial }}\';" />\n          {% else %}\n          {{ author_initial }}\n          {% endif %}\n        </div>\n        <div class="author-meta">\n          <div class="author-name-row">\n            <span class="author-name">{{ author_name }}</span>\n            <span class="verified-badge">✓</span>\n          </div>\n          <span class="author-sub">@{{ username }}{% if pub_date %} · {{ pub_date }}{% endif %}</span>\n        </div>\n      </div>\n      <div class="brand-logo">𝕏</div>\n    </div>\n\n    {% if orig_body or orig_tags %}\n    <div class="tweet-section">\n      {% if orig_body %}\n      <div class="tweet-body">{{ orig_body }}</div>\n      {% endif %}\n      {% if orig_tags %}\n      <div class="tweet-tags">{{ orig_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if translated_body or translated_tags %}\n    <div class="trans-section">\n      {% if orig_body and translated_body %}\n      <div class="trans-body">{{ translated_body }}</div>\n      {% endif %}\n      {% if translated_tags %}\n      <div class="trans-tags">{{ translated_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if vision_matched_tags %}\n    <div style="margin: 10px 0; padding: 10px 12px; background: #ecfdf5; border-radius: 10px; color: #065f46; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere;">\n      <span style="font-weight: 600;">视觉筛选命中：</span>\n      {% for tag in vision_matched_tags %}\n      <span style="display: inline-block; margin: 2px 4px; padding: 1px 8px; border: 1px solid #a7f3d0; border-radius: 12px;">{{ tag | e }}</span>\n      {% endfor %}\n    </div>\n    {% endif %}\n    {% if quote_info %}\n    <div class="quote-card">\n      <div class="quote-header">\n        <div class="quote-avatar">\n          {% if quote_info.avatar_src %}\n          <img src="{{ quote_info.avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ quote_info.author_initial }}\';" />\n          {% else %}\n          {{ quote_info.author_initial }}\n          {% endif %}\n        </div>\n        <span class="quote-author-name">{{ quote_info.author_name }}</span>\n        <span class="quote-author-handle">@{{ quote_info.username }}</span>\n      </div>\n      {% if quote_info.orig_body %}\n      <div class="quote-body">{{ quote_info.orig_body }}</div>\n      {% endif %}\n      {% if quote_info.orig_tags %}\n      <div class="quote-tags">{{ quote_info.orig_tags|join(\' \') }}</div>\n      {% endif %}\n      {% if quote_info.display_images %}\n      <div class="media-grid count-{{ quote_info.display_images|length if quote_info.display_images|length <= 4 else 4 }}">\n        {% for img_src in quote_info.display_images[:4] %}\n        <div class="media-item">\n          <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% endfor %}\n      </div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if display_images %}\n    <div class="media-grid count-{{ display_images|length if display_images|length <= 4 else 4 }}">\n      {% for img_src in display_images[:4] %}\n      <div class="media-item">\n        <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </div>\n      {% endfor %}\n    </div>\n    {% endif %}\n  </div>\n</body>\n</html>\n'
 
 DAILY_DIGEST_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #181e29;\n    -webkit-font-smoothing: antialiased;\n  }\n  .digest-page {\n    width: 100%;\n    background: linear-gradient(\n      180deg,\n      rgba(var(--theme-rgb, 254, 228, 238), 0.62) 0%,\n      rgba(var(--theme-mid-rgb, 255, 255, 255), 0.28) 50%,\n      rgba(var(--theme-end-rgb, 235, 228, 255), 0.58) 100%\n    );\n    padding: 34px 36px 38px 36px;\n    position: relative;\n    overflow: hidden;\n  }\n  .page-deco-circle {\n    position: absolute;\n    top: -90px;\n    right: -70px;\n    width: 260px;\n    height: 260px;\n    border-radius: 50%;\n    background: radial-gradient(\n      circle,\n      rgba(var(--theme-accent-rgb, 112, 72, 232), 0.10) 0%,\n      rgba(var(--theme-accent-rgb, 112, 72, 232), 0) 70%\n    );\n    pointer-events: none;\n    z-index: 0;\n  }\n  .digest-header {\n    position: relative;\n    z-index: 2;\n    display: flex;\n    align-items: flex-end;\n    justify-content: space-between;\n    gap: 20px;\n  }\n  .header-left {\n    display: flex;\n    align-items: center;\n    gap: 16px;\n  }\n  .header-accent-bar {\n    width: 8px;\n    height: 46px;\n    border-radius: 99px;\n    background: linear-gradient(\n      180deg,\n      var(--theme-accent, #d6336c) 0%,\n      var(--theme-mid-accent, var(--theme-accent, #d6336c)) 100%\n    );\n    box-shadow: 0 4px 14px rgba(var(--theme-accent-rgb, 214, 51, 108), 0.30);\n    flex-shrink: 0;\n  }\n  .header-title-wrap {\n    display: flex;\n    flex-direction: column;\n    gap: 4px;\n  }\n  .header-title {\n    font-size: 32px;\n    font-weight: 900;\n    color: #141923;\n    letter-spacing: 1.5px;\n    line-height: 1.1;\n  }\n  .header-sub {\n    font-size: 11px;\n    font-weight: 800;\n    letter-spacing: 2.4px;\n    text-transform: uppercase;\n    color: var(--theme-accent, #7048e8);\n    opacity: 0.88;\n  }\n  .header-right {\n    display: flex;\n    flex-direction: column;\n    align-items: flex-end;\n    gap: 7px;\n  }\n  .date-badge {\n    background: rgba(var(--theme-rgb, 236, 229, 255), 0.95);\n    color: var(--theme-accent, #7048e8);\n    border: 1px solid var(--theme-border, #d0bfff);\n    padding: 5px 14px;\n    border-radius: 99px;\n    font-size: 12.5px;\n    font-weight: 800;\n    letter-spacing: 0.8px;\n  }\n  .stats-row {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    font-size: 12px;\n    font-weight: 600;\n    color: #64748b;\n  }\n  .stats-row strong {\n    color: #1e293b;\n    font-weight: 800;\n  }\n  .stats-dot {\n    width: 4px;\n    height: 4px;\n    border-radius: 50%;\n    background: var(--theme-accent, #7048e8);\n    opacity: 0.45;\n  }\n  .header-divider {\n    position: relative;\n    z-index: 2;\n    height: 2.5px;\n    margin: 20px 0 24px 0;\n    border-radius: 99px;\n    background: linear-gradient(\n      90deg,\n      var(--theme-accent, #d6336c) 0%,\n      var(--theme-mid-accent, var(--theme-border, #f9b8d4)) 45%,\n      rgba(var(--theme-end-accent-rgb, var(--theme-accent-rgb, 214, 51, 108)), 0.22) 100%\n    );\n  }\n  .digest-list {\n    position: relative;\n    z-index: 2;\n    display: flex;\n    flex-direction: column;\n    gap: 18px;\n  }\n  .news-card {\n    position: relative;\n    width: 100%;\n    border-radius: 22px;\n    overflow: hidden;\n    background: linear-gradient(\n      90deg,\n      rgb(var(--card-rgb)) 0%,\n      rgb(var(--card-soft-rgb)) 100%\n    );\n    border: 1.5px solid var(--card-border);\n    box-shadow:\n      0 10px 26px -10px rgba(var(--accent-rgb), 0.15),\n      inset 0 1px 0 rgba(255, 255, 255, 0.75);\n    display: flex;\n    align-items: stretch;\n  }\n  .news-card.has-image {\n    min-height: 178px;\n  }\n  .news-card.no-image {\n    min-height: 136px;\n  }\n  .card-accent-strip {\n    width: 6px;\n    background: var(--accent);\n    flex-shrink: 0;\n    z-index: 3;\n  }\n  .card-body {\n    position: relative;\n    z-index: 3;\n    display: flex;\n    flex-direction: column;\n    justify-content: center;\n  }\n  .news-card.has-image .card-body {\n    width: 64%;\n    padding: 22px 18px 22px 22px;\n  }\n  .news-card.no-image .card-body {\n    width: 100%;\n    padding: 22px 28px 22px 22px;\n  }\n  .card-meta {\n    display: flex;\n    align-items: center;\n    flex-wrap: wrap;\n    gap: 8px;\n    margin-bottom: 9px;\n  }\n  .card-num {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    height: 22px;\n    padding: 0 9px;\n    border-radius: 99px;\n    background: var(--accent);\n    color: #ffffff;\n    font-size: 11.5px;\n    font-weight: 800;\n    letter-spacing: 0.6px;\n    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.25);\n  }\n  .card-cat {\n    display: inline-flex;\n    align-items: center;\n    height: 22px;\n    padding: 0 10px;\n    border-radius: 99px;\n    background: var(--tag-bg);\n    color: var(--accent);\n    border: 1px solid rgba(var(--accent-rgb), 0.24);\n    font-size: 11.5px;\n    font-weight: 700;\n    letter-spacing: 0.3px;\n  }\n  .card-author {\n    font-size: 12.5px;\n    font-weight: 700;\n    color: #334155;\n  }\n  .card-time {\n    font-size: 11.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .card-title {\n    font-size: 19px;\n    font-weight: 850;\n    color: #141923;\n    line-height: 1.38;\n    margin-bottom: 7px;\n    letter-spacing: 0.2px;\n  }\n  .card-summary {\n    font-size: 14.5px;\n    font-weight: 500;\n    color: #2d3748;\n    line-height: 1.66;\n    word-break: break-word;\n  }\n  /* 使用 CSS mask-image 控制图片自身的 Alpha 透明度，从右向左逐渐透明融入卡片马卡龙底色，绝不发白、绝无接缝 */\n  .card-artwork {\n    position: absolute;\n    top: 0;\n    right: 0;\n    bottom: 0;\n    width: 58%;\n    z-index: 1;\n    overflow: hidden;\n    -webkit-mask-image: linear-gradient(\n      90deg,\n      rgba(0, 0, 0, 0) 0%,\n      rgba(0, 0, 0, 0.04) 12%,\n      rgba(0, 0, 0, 0.18) 28%,\n      rgba(0, 0, 0, 0.48) 48%,\n      rgba(0, 0, 0, 0.80) 68%,\n      rgba(0, 0, 0, 0.96) 85%,\n      rgba(0, 0, 0, 1) 100%\n    );\n    mask-image: linear-gradient(\n      90deg,\n      rgba(0, 0, 0, 0) 0%,\n      rgba(0, 0, 0, 0.04) 12%,\n      rgba(0, 0, 0, 0.18) 28%,\n      rgba(0, 0, 0, 0.48) 48%,\n      rgba(0, 0, 0, 0.80) 68%,\n      rgba(0, 0, 0, 0.96) 85%,\n      rgba(0, 0, 0, 1) 100%\n    );\n  }\n  .card-artwork img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    object-position: center 20%;\n    display: block;\n  }\n  .card-watermark-num {\n    position: absolute;\n    right: 22px;\n    bottom: -10px;\n    font-size: 76px;\n    font-weight: 900;\n    line-height: 1;\n    letter-spacing: -2px;\n    color: rgba(var(--accent-rgb), 0.08);\n    pointer-events: none;\n    z-index: 1;\n    user-select: none;\n  }\n</style>\n</head>\n<body>\n  <div\n    class="digest-page"\n    style="\n      --theme-rgb: {{ theme.card_rgb }};\n      --theme-soft-rgb: {{ theme.card_soft_rgb }};\n      --theme-border: {{ theme.card_border }};\n      --theme-accent: {{ theme.accent }};\n      --theme-accent-rgb: {{ theme.accent_rgb }};\n      --theme-mid-rgb: {{ (theme_mid or theme).card_rgb }};\n      --theme-mid-accent: {{ (theme_mid or theme).accent }};\n      --theme-end-rgb: {{ (theme_end or theme).card_soft_rgb }};\n      --theme-end-accent-rgb: {{ (theme_end or theme).accent_rgb }};\n    "\n  >\n    <div class="page-deco-circle"></div>\n\n    <div class="digest-header">\n      <div class="header-left">\n        <div class="header-accent-bar"></div>\n        <div class="header-title-wrap">\n          <div class="header-title">今日要闻</div>\n          <div class="header-sub">DAILY CURATED BRIEFING</div>\n        </div>\n      </div>\n\n      <div class="header-right">\n        <div class="date-badge">{{ date_str }}</div>\n        <div class="stats-row">\n          <span>24H 收录 <strong>{{ total_count }}</strong></span>\n          <span class="stats-dot"></span>\n          <span>精选 <strong>{{ items|length }}</strong></span>\n          <span class="stats-dot"></span>\n          <span>订阅 <strong>{{ account_count }}</strong></span>\n        </div>\n      </div>\n    </div>\n\n    <div class="header-divider"></div>\n\n    <div class="digest-list">\n      {% for item in items %}\n      <div\n        class="news-card {% if item.thumb_src %}has-image{% else %}no-image{% endif %}"\n        style="\n          --card-rgb: {{ item.palette.card_rgb }};\n          --card-soft-rgb: {{ item.palette.card_soft_rgb }};\n          --card-border: {{ item.palette.card_border }};\n          --accent: {{ item.palette.accent }};\n          --accent-rgb: {{ item.palette.accent_rgb }};\n          --tag-bg: {{ item.palette.tag_bg }};\n        "\n      >\n        <div class="card-accent-strip"></div>\n\n        <div class="card-body">\n          <div class="card-meta">\n            <span class="card-num">{{ "%02d"|format(loop.index) }}</span>\n            <span class="card-cat">{{ item.category or "资讯速递" }}</span>\n            <span class="card-author">@{{ item.username }}{% if item.author_name and item.author_name != item.username %} · {{ item.author_name }}{% endif %}</span>\n            {% if item.pub_date %}\n            <span class="card-time">{{ item.pub_date }}</span>\n            {% endif %}\n          </div>\n          <div class="card-title">{{ item.title }}</div>\n          <div class="card-summary">{{ item.summary }}</div>\n        </div>\n\n        {% if item.thumb_src %}\n        <div class="card-artwork">\n          <img src="{{ item.thumb_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% else %}\n        <div class="card-watermark-num">{{ "%02d"|format(loop.index) }}</div>\n        {% endif %}\n      </div>\n      {% endfor %}\n    </div>\n  </div>\n</body>\n</html>\n'
 
@@ -602,17 +603,68 @@ class TwitterRssPlugin(Star):
         try:
             return await client.get(url)
         except httpx.PoolTimeout:
-            # A PoolTimeout is local to this AsyncClient: the request has not
-            # reached the upstream yet. Recreating the client releases stale
-            # connections and lets the next source/account continue.
+            # Do not close a shared client while concurrent requests are using it.
             async with self._http_reinit_lock:
-                if self.http_client is client:
-                    await self._init_http_client()
-                client = self.http_client
-            logger.warning(
-                f"[TwitterRSS] HTTP 连接池耗尽，已重建客户端并重试: {url}"
-            )
-            return await client.get(url)
+                await asyncio.sleep(0.3)
+                logger.warning(f"[TwitterRSS] HTTP 连接池繁忙，等待后重试: {url}")
+                return await self.http_client.get(url)
+
+    def _feed_host(self, url: str) -> str:
+        host = (urlsplit(url).hostname or "").lower()
+        # These aliases share an upstream and should share a rate budget.
+        return "fxtwitter.com" if host in {"fxtwitter.com", "fixupx.com", "api.fxtwitter.com"} else host
+
+    def _feed_hosts(self) -> dict[str, dict[str, Any]]:
+        if not hasattr(self, "_feed_host_states"):
+            self._feed_host_states = {}
+        return self._feed_host_states
+
+    def _prioritize_feed_urls(self, urls: list[str]) -> list[str]:
+        hosts = self._feed_hosts()
+        now = time.monotonic()
+        def priority(url):
+            state = hosts.get(self._feed_host(url), {})
+            return (state.get("cooldown", 0) > now, state.get("pending", 0), state.get("next", 0))
+        return sorted(urls, key=priority)
+
+    def _cool_down_feed(self, url: str, seconds: float = 30) -> None:
+        state = self._feed_hosts().setdefault(self._feed_host(url), {})
+        state["cooldown"] = max(state.get("cooldown", 0), time.monotonic() + seconds)
+
+    async def _fetch_feed_response(self, url: str) -> httpx.Response:
+        """Serialize feed requests per upstream; other upstreams remain concurrent."""
+        state = self._feed_hosts().setdefault(self._feed_host(url), {})
+        lock = state.setdefault("lock", asyncio.Lock())
+        state["pending"] = state.get("pending", 0) + 1
+        try:
+            async with lock:
+                if state.get("cooldown", 0) > time.monotonic():
+                    raise RuntimeError("源站冷却中，尝试其他源")
+                delay = state.get("next", 0) - time.monotonic()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                interval = max(0.3, float(self.config.get("request_interval_seconds", 1.5) or 1.5))
+                state["next"] = time.monotonic() + interval
+                try:
+                    resp = await self._http_get_with_recovery(url)
+                except httpx.RequestError:
+                    self._cool_down_feed(url)
+                    raise
+                if resp.status_code == 429:
+                    retry_after = resp.headers.get("Retry-After", "60")
+                    try:
+                        seconds = float(retry_after)
+                    except (ValueError, TypeError):
+                        try:
+                            seconds = email.utils.parsedate_to_datetime(retry_after).timestamp() - time.time()
+                        except (ValueError, TypeError, OverflowError):
+                            seconds = 60
+                    self._cool_down_feed(url, max(1, seconds))
+                elif resp.status_code == 403 or resp.status_code >= 500:
+                    self._cool_down_feed(url, 60)
+                return resp
+        finally:
+            state["pending"] -= 1
 
     async def terminate(self):
         self._started = False
@@ -642,13 +694,15 @@ class TwitterRssPlugin(Star):
             return default
 
     async def _save_state(self):
-        def _write():
-            self.state_file.write_text(
-                json.dumps(self.state, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-
-        await asyncio.to_thread(_write)
+        if not hasattr(self, "_state_write_lock"):
+            self._state_write_lock = asyncio.Lock()
+        async with self._state_write_lock:
+            payload = json.dumps(self.state, ensure_ascii=False, indent=2)
+            def _write():
+                temporary = self.state_file.with_suffix(".json.tmp")
+                temporary.write_text(payload, encoding="utf-8")
+                temporary.replace(self.state_file)
+            await asyncio.to_thread(_write)
 
     async def _save_digest_archive(self):
         def _write():
@@ -1121,6 +1175,24 @@ class TwitterRssPlugin(Star):
 
             def _apply_options_to_schema_dict(s_dict: dict[str, Any]) -> bool:
                 changed_flag = False
+                concurrency_fields = {
+                    "fetch_concurrency": {
+                        "description": "订阅抓取并发数", "type": "int", "default": 4,
+                        "hint": "同时抓取不同账号或标签的任务数，范围 1~12。优先分散到不同站点；同一源站串行并保留请求间隔。",
+                    },
+                    "processing_concurrency": {
+                        "description": "分群筛选推送并发数", "type": "int", "default": 3,
+                        "hint": "同时执行分群 AI 筛选与推送的任务数，范围 1~8。各群独立评估，同一群按队列处理。",
+                    },
+                    "request_interval_seconds": {
+                        "description": "同源站订阅抓取间隔秒数（防高频限流）", "type": "float", "default": 1.5,
+                        "hint": "同一源站两次订阅请求开始时间的最小间隔；不同站点可并发。FxTwitter、FixupX 和 FxTwitter API 共用限速。429 按 Retry-After 冷却并回退。",
+                    },
+                }
+                for field, definition in concurrency_fields.items():
+                    if s_dict.get(field) != definition:
+                        s_dict[field] = definition
+                        changed_flag = True
                 search_field = {
                     "description": "标签搜索 RSS 接口地址",
                     "type": "string", "default": DEFAULT_HASHTAG_SEARCH_URL,
@@ -1457,11 +1529,11 @@ class TwitterRssPlugin(Star):
         return sorted(tweets, key=lambda tweet: tweet["timestamp"])
 
     async def _fetch_hashtag_tweets(self, tag: str) -> list[dict[str, Any]]:
-        urls = self._get_hashtag_search_urls(tag)
+        urls = self._prioritize_feed_urls(self._get_hashtag_search_urls(tag))
         empty_feed_seen = False
         for index, url in enumerate(urls):
             try:
-                resp = await self._http_get_with_recovery(url)
+                resp = await self._fetch_feed_response(url)
                 resp.raise_for_status()
                 tweets = await asyncio.to_thread(self._parse_hashtag_feed, resp.text, tag)
                 if not tweets:
@@ -1471,6 +1543,8 @@ class TwitterRssPlugin(Star):
                 logger.info(f"[TwitterRSS] 标签 #{tag} 搜索成功: {len(tweets)} 条推文，源 {urlsplit(url).netloc}（候选 {index + 1}/{len(urls)}）")
                 return tweets
             except Exception as exc:
+                if isinstance(exc, (ValueError, ET.ParseError)):
+                    self._cool_down_feed(url)
                 logger.warning(f"[TwitterRSS] 标签 #{tag} 搜索源 {urlsplit(url).netloc} 失败: {type(exc).__name__}: {str(exc).strip() or repr(exc)}")
         if not empty_feed_seen:
             logger.warning(f"[TwitterRSS] 标签 #{tag} 所有搜索源均失败（{len(urls)} 个候选）")
@@ -1593,7 +1667,7 @@ class TwitterRssPlugin(Star):
 
         try:
             check_url = f"https://api.fxtwitter.com/{username}"
-            resp = await self._http_get_with_recovery(check_url)
+            resp = await self._fetch_feed_response(check_url)
             if resp.status_code == 404:
                 return True
             if resp.status_code == 200:
@@ -1680,30 +1754,17 @@ class TwitterRssPlugin(Star):
             logger.warning(f"[TwitterRSS] 账号 ID 格式无效 ({account})，标记为不存在。")
             return []
 
-        candidate_urls = self._get_candidate_urls(account)
+        candidate_urls = self._prioritize_feed_urls(self._get_candidate_urls(account))
         errors: list[str] = []
         explicit_404_hits = 0
-        fx_timed_out = False
 
         for url in candidate_urls:
-            # 若 fxtwitter.com 刚发生连接/读取超时，fixupx.com 同属一个源站，先冷却 1.5 秒再试
-            if fx_timed_out and ("fixupx.com" in url or "api.fxtwitter.com" in url):
-                await asyncio.sleep(1.5)
-
             try:
-                resp = await self._http_get_with_recovery(url)
+                resp = await self._fetch_feed_response(url)
                 final_url = str(resp.url)
                 if "google.com/404" in final_url or "x.com/i/flow/login" in final_url:
                     errors.append(f"{url} -> 重定向至无效页面 ({final_url})")
                     continue
-
-                # 遇到 429 频率限制时，自动退避等待后重试一次
-                if resp.status_code == 429:
-                    retry_after = float(resp.headers.get("Retry-After", "3") or 3)
-                    wait_sec = min(8.0, max(2.0, retry_after))
-                    logger.info(f"[TwitterRSS] 源 {url} 触发 429 限流，退避等待 {wait_sec:.1f}s 后重试...")
-                    await asyncio.sleep(wait_sec)
-                    resp = await self._http_get_with_recovery(url)
 
                 if resp.status_code == 404:
                     if any(
@@ -1751,15 +1812,17 @@ class TwitterRssPlugin(Star):
                     )
                     return tweets
                 errors.append(f"{url} -> 解析到 0 条推文")
+                if "<html" in body_text.lower() or "<!doctype html" in body_text.lower():
+                    self._cool_down_feed(url, 60)
             except httpx.TimeoutException as e:
-                if "fxtwitter.com" in url:
-                    fx_timed_out = True
                 errors.append(f"{url} -> 请求超时 ({type(e).__name__})")
             except Exception as e:
+                if isinstance(e, (ValueError, ET.ParseError)):
+                    self._cool_down_feed(url)
                 err_detail = str(e).strip() or repr(e)
                 errors.append(f"{url} -> {type(e).__name__}: {err_detail}")
 
-        if await self._check_user_not_found_on_twitter(account, explicit_404_hits):
+        if explicit_404_hits and await self._check_user_not_found_on_twitter(account, explicit_404_hits):
             self._not_found_accounts.add(acct_key)
             logger.warning(f"[TwitterRSS] 经核验推特账号 @{account} 不存在 (404 User Not Found)。")
             return []
@@ -3225,6 +3288,10 @@ class TwitterRssPlugin(Star):
         matched_must = self._clean_str_list(data.get("matched_must_tags"))
         matched_any = self._clean_str_list(data.get("matched_any_tags"))
         matched_exc = self._clean_str_list(data.get("matched_exclude_tags"))
+        hit_must = [t for t in must_tags if t.lower() in {m.lower() for m in matched_must}]
+        hit_any = [t for t in any_tags if t.lower() in {m.lower() for m in matched_any}]
+        hit_exc = [t for t in exclude_tags if t.lower() in {m.lower() for m in matched_exc}]
+        missing_must = [t for t in must_tags if t not in hit_must]
 
         # 如果原推文没有正文，强制省略正文翻译
         translated_body = (
@@ -3232,44 +3299,24 @@ class TwitterRssPlugin(Star):
         )
         translated_tags = self._normalize_translated_tags(data.get("translated_tags"))
 
-        # 1. 检查排除标签
-        if exclude_tags and matched_exc:
-            return {
-                "passed": False,
-                "translated_body": translated_body,
-                "translated_tags": translated_tags,
-                "reason": f"图片包含排除标签: {', '.join(matched_exc)}",
-            }
-
-        # 2. 检查必须包含标签（必须全部命中）
-        if must_tags:
-            matched_must_lower = {m.lower() for m in matched_must}
-            missing_must = [t for t in must_tags if t.lower() not in matched_must_lower]
-            if missing_must:
-                return {
-                    "passed": False,
-                    "translated_body": translated_body,
-                    "translated_tags": translated_tags,
-                    "reason": f"图片未命中必须包含标签: {', '.join(missing_must)}",
-                }
-
-        # 3. 检查其他任意标签（只需匹配到一条即通过）
-        if any_tags:
-            matched_any_lower = {m.lower() for m in matched_any}
-            hit_any = [t for t in any_tags if t.lower() in matched_any_lower] or matched_any
-            if not hit_any:
-                return {
-                    "passed": False,
-                    "translated_body": translated_body,
-                    "translated_tags": translated_tags,
-                    "reason": f"图片未匹配到任何一条任意标签 ({', '.join(any_tags)})",
-                }
+        # Report all failed conditions together so partial matches remain visible.
+        reasons = []
+        if hit_exc:
+            reasons.append(f"图片包含排除标签: {', '.join(hit_exc)}")
+        if missing_must:
+            reasons.append(f"图片未命中必须包含标签: {', '.join(missing_must)}")
+        if any_tags and not hit_any:
+            reasons.append(f"图片未匹配到任何一条任意标签 ({', '.join(any_tags)})")
 
         return {
-            "passed": True,
+            "passed": not reasons,
             "translated_body": translated_body,
             "translated_tags": translated_tags,
-            "reason": "通过视觉标签过滤",
+            "reason": "；".join(reasons) if reasons else "通过视觉标签过滤",
+            "matched_must_tags": hit_must,
+            "matched_any_tags": hit_any,
+            "matched_exclude_tags": hit_exc,
+            "missing_must_tags": missing_must,
         }
 
     async def _evaluate_text_for_group(
@@ -3376,6 +3423,8 @@ class TwitterRssPlugin(Star):
             return False, prepared_tweet
 
         enriched = dict(prepared_tweet)
+        # Visual matches belong to this group's evaluation, not shared media.
+        enriched.pop("vision_matched_tags", None)
 
         # 若该账号对应推文类型设置为【直接推送】，则不经过 AI 判断内容是否值得推送，直接翻译并放行！
         if self._is_direct_push_tweet(enriched, group_rule):
@@ -3401,13 +3450,24 @@ class TwitterRssPlugin(Star):
                 enriched["translated_tags"] = v_res["translated_tags"]
 
             if not v_res.get("passed", False):
+                match_details = ""
+                if "matched_must_tags" in v_res:
+                    match_details = (
+                        f" | 已命中必须标签: {'、'.join(v_res['matched_must_tags']) or '无'}"
+                        f" | 已命中任意标签: {'、'.join(v_res.get('matched_any_tags', [])) or '无'}"
+                        f" | 命中排除标签: {'、'.join(v_res.get('matched_exclude_tags', [])) or '无'}"
+                    )
                 logger.info(
-                    f"[TwitterRSS] 群[{group_rule.get('group_name')}] 推文 {enriched['id']} (@{enriched['username']}) 未通过视觉筛选: {v_res.get('reason')}"
+                    f"[TwitterRSS] 群[{group_rule.get('group_name')}] 推文 {enriched['id']} (@{enriched['username']}) 未通过视觉筛选: {v_res.get('reason')}{match_details}"
                 )
                 return False, enriched
 
+            enriched["vision_matched_tags"] = list(dict.fromkeys(
+                v_res.get("matched_must_tags", []) + v_res.get("matched_any_tags", [])
+            ))
+            matched_label = "、".join(enriched["vision_matched_tags"]) or "未配置包含标签"
             logger.info(
-                f"[TwitterRSS] 群[{group_rule.get('group_name')}] 推文 {enriched['id']} (@{enriched['username']}) 通过视觉标签筛选"
+                f"[TwitterRSS] 群[{group_rule.get('group_name')}] 推文 {enriched['id']} (@{enriched['username']}) 通过视觉标签筛选 | 命中标签: {matched_label}"
             )
             if bypass_text:
                 return True, enriched
@@ -3519,7 +3579,7 @@ class TwitterRssPlugin(Star):
         """将通过筛选的推文渲染为无黑边推文卡片，并按【渲染推文图片 + 原图单独发送】推送到指定群聊"""
         umo = self._resolve_target_umo(target_umo)
         if not umo:
-            return
+            return False
 
         author_name = enriched_tweet.get("author_name") or enriched_tweet.get("username", "X")
         orig_body = enriched_tweet.get("orig_body", "")
@@ -3544,6 +3604,7 @@ class TwitterRssPlugin(Star):
             "quote_info": enriched_tweet.get("quote_info"),
             "display_images": enriched_tweet.get("display_images", []),
             "pub_date": enriched_tweet.get("pub_date", ""),
+            "vision_matched_tags": enriched_tweet.get("vision_matched_tags", []),
         }
 
         logger.info(
@@ -3640,159 +3701,189 @@ class TwitterRssPlugin(Star):
             )
         except Exception as e:
             logger.error(f"[TwitterRSS] 向群聊会话 {umo} 推送推文失败: {e}")
+            return False
 
     async def check_all_accounts(
         self, manual: bool = False, target_rule: dict[str, Any] | None = None
     ) -> dict[str, int]:
-        """遍历所有分群订阅配置（或指定群聊配置），拉取新推文并按各群独立规则筛选推送"""
+        """Fetch each subscription once, then fan out to independent group consumers."""
         async with self._lock:
             rules = [target_rule] if target_rule is not None else self._get_group_rules()
             stats = {"fetched": 0, "new": 0, "pushed": 0}
             if not rules:
-                logger.info("[TwitterRSS] 当前尚未配置任何分群订阅规则 (group_subscriptions)，跳过本轮轮询。")
                 return stats
-            logger.info(
-                f"[TwitterRSS] {'手动触发' if manual else '定时任务'}开始检查新推文（共 {len(rules)} 个群聊规则）..."
-            )
-
-            seen_map: dict[str, list[str]] = self.state.setdefault("seen_ids", {})
-            init_keys: list[str] = self.state.setdefault("initialized_keys", [])
+            fetch_limit = max(1, min(12, int(self.config.get("fetch_concurrency", 4) or 4)))
+            process_limit = max(1, min(8, int(self.config.get("processing_concurrency", 3) or 3)))
+            fetch_slots = asyncio.Semaphore(fetch_limit)
+            process_slots = asyncio.Semaphore(process_limit)
+            media_slots = asyncio.Semaphore(process_limit)
+            seen_map = self.state.setdefault("seen_ids", {})
+            init_keys = self.state.setdefault("initialized_keys", [])
             first_run_mark_seen = bool(self.config.get("first_run_mark_seen", True))
-            existing_hist_map = {h["id"]: h for h in self.history_tweets}
-            history_by_identity = {self._tweet_identity(h): h for h in self.history_tweets}
+            history = {self._tweet_identity(t): t for t in self.history_tweets}
+            prepared_tasks: dict[str, asyncio.Task] = {}
+            subscribers: dict[str, list[asyncio.Queue]] = {}
+            sources: dict[str, tuple[str, bool]] = {}
+            group_seen: dict[str, set[str]] = {}
+            group_locks: dict[str, asyncio.Lock] = {}
+            consumers = []
+            queues = []
 
-            # 按账号缓存本轮拉取结果，避免多个群订阅同一画师时重复请求 RSS
-            account_tweets_cache: dict[str, list[dict[str, Any]]] = {}
+            async def prepare_shared(tweet):
+                # Keep source-specific hashtag metadata out of the shared media result.
+                async with media_slots:
+                    base = copy.deepcopy(tweet)
+                    base.pop("subscription_hashtag", None)
+                    base.pop("subscription_hashtags", None)
+                    return await self._prepare_tweet_media(base)
+
+            async def process_source(rule, umo, key, account, is_hashtag, tweets):
+                if not tweets:
+                    if not is_hashtag and account.strip().lstrip("@").lower() in self._not_found_accounts:
+                        self._auto_remove_invalid_account(account, target_rule=rule)
+                        stats.setdefault("removed_accounts", []).append(account)
+                        try:
+                            await self.context.send_message(umo, MessageChain([Comp.Plain(
+                                f"🗑️ [TwitterRSS] 账号 @{account} 不存在，已从本群订阅中移除。"
+                            )]))
+                        except Exception as exc:
+                            logger.warning(f"[TwitterRSS] 发送无效账号通知失败: {exc}")
+                    return
+                state_key = f"{umo}::{key}"
+                # Migrate older case-sensitive account keys without replaying history.
+                for old_key in list(seen_map):
+                    if old_key.startswith(f"{umo}::") and old_key[len(umo) + 2:].casefold() == key and old_key != state_key:
+                        seen_map[state_key] = list(dict.fromkeys(seen_map.get(state_key, []) + seen_map.pop(old_key)))
+                        if old_key in init_keys:
+                            init_keys.remove(old_key)
+                            if state_key not in init_keys:
+                                init_keys.append(state_key)
+                read_order = dict.fromkeys(seen_map.get(state_key, []))
+                seen = group_seen[umo]
+                first = state_key not in init_keys
+                candidates = []
+                for tweet in tweets:
+                    identity = self._tweet_identity(tweet)
+                    prior = history.get(identity)
+                    if prior is not None and is_hashtag:
+                        prior["subscription_hashtags"] = list(dict.fromkeys(
+                            prior.get("subscription_hashtags", [])
+                            + ([prior["subscription_hashtag"]] if prior.get("subscription_hashtag") else [])
+                            + [account[1:]]
+                        ))
+                    if tweet["id"] in read_order:
+                        continue
+                    if identity in seen or self._should_skip_tweet(tweet, rule):
+                        read_order[tweet["id"]] = None
+                        continue
+                    if prior is None:
+                        prior = copy.deepcopy(tweet)
+                        history[identity] = prior
+                        self.history_tweets.append(prior)
+                    candidates.append(tweet)
+                if first and first_run_mark_seen and not manual:
+                    mark_only, candidates = candidates, []
+                    logger.info(f"[TwitterRSS] 群[{rule.get('group_name')}] 订阅 {account} 首次初始化，标记 {len(mark_only)} 条历史已读")
+                elif first:
+                    mark_only, candidates = candidates[:-2], candidates[-2:]
+                else:
+                    mark_only = []
+                for tweet in mark_only:
+                    read_order[tweet["id"]] = None
+                    seen.add(self._tweet_identity(tweet))
+                # Initialization applies to this subscription, not each process restart.
+                if first:
+                    init_keys.append(state_key)
+                seen_map[state_key] = list(read_order)[-300:]
+                for tweet in candidates:
+                    identity = self._tweet_identity(tweet)
+                    if identity in seen:
+                        read_order[tweet["id"]] = None
+                        continue
+                    stats["new"] += 1
+                    try:
+                        media_key = (identity, tweet.get("username"), bool(tweet.get("is_retweet")), tweet.get("rt_status_id"))
+                        if media_key not in prepared_tasks:
+                            prepared_tasks[media_key] = asyncio.create_task(prepare_shared(tweet))
+                        prepared = copy.deepcopy(await prepared_tasks[media_key])
+                        for field in ("subscription_hashtag", "subscription_hashtags"):
+                            if field in tweet:
+                                prepared[field] = copy.deepcopy(tweet[field])
+                        async with process_slots:
+                            worth, enriched = await self.evaluate_tweet_for_group(prepared, rule)
+                            if worth:
+                                sent = await self.push_tweet_to_umo(enriched, umo)
+                                if sent is False:
+                                    raise RuntimeError("推送失败")
+                                stats["pushed"] += 1
+                        history[identity]["ai_summary"] = enriched.get("translated_body", "")
+                        read_order[tweet["id"]] = None
+                        seen.add(identity)
+                        seen_map[state_key] = list(read_order)[-300:]
+                        # Persist completed deliveries while other groups are still processing.
+                        await self._save_state()
+                    except Exception as exc:
+                        logger.error(f"[TwitterRSS] 群[{rule.get('group_name')}] 处理推文 {identity} 失败，将在下轮重试: {exc}")
+                seen_map[state_key] = list(read_order)[-300:]
+
+            async def consume(rule, umo, queue):
+                while True:
+                    item = await queue.get()
+                    if item is None:
+                        return
+                    key, account, is_hashtag, tweets = item
+                    try:
+                        async with group_locks[umo]:
+                            await process_source(rule, umo, key, account, is_hashtag, tweets)
+                    except Exception as exc:
+                        logger.error(f"[TwitterRSS] 群[{rule.get('group_name')}] 处理订阅 {account} 失败: {exc}")
 
             for rule in rules:
                 umo = self._resolve_target_umo(rule.get("target_umo", ""))
-                accounts = self._get_rule_accounts(rule)
-                tags = self._get_rule_hashtags(rule)
-                if not umo or not (accounts or tags):
+                if not umo:
                     continue
-
-                # Share identities across account feeds and hashtag searches in a group.
-                group_seen = {
+                queue = asyncio.Queue()
+                queues.append(queue)
+                group_locks.setdefault(umo, asyncio.Lock())
+                group_seen.setdefault(umo, {
                     self._tweet_identity(tweet_id)
                     for key, ids in seen_map.items() if key.startswith(f"{umo}::")
                     for tweet_id in ids
-                }
+                })
+                subscriptions = [(a, False) for a in self._get_rule_accounts(rule)] + [(f"#{t}", True) for t in self._get_rule_hashtags(rule)]
+                for account, is_hashtag in subscriptions:
+                    key = account if account.startswith(("http://", "https://")) else account.casefold()
+                    sources.setdefault(key, (account, is_hashtag))
+                    subscribers.setdefault(key, []).append(queue)
+                consumers.append(asyncio.create_task(consume(rule, umo, queue)))
 
-                req_delay = max(0.3, float(self.config.get("request_interval_seconds", 1.5) or 1.5))
-                sources = [(account, False) for account in accounts] + [(f"#{tag}", True) for tag in tags]
-                for account, is_hashtag in sources:
-                    cache_key = account.casefold() if is_hashtag else account
-                    if cache_key not in account_tweets_cache:
-                        if account_tweets_cache:
-                            await asyncio.sleep(req_delay + random.uniform(0.1, 0.7))
-                        fetched_list = await self._fetch_hashtag_tweets(account[1:]) if is_hashtag else await self._fetch_account_tweets(account)
-                        account_tweets_cache[cache_key] = fetched_list
-                        stats["fetched"] += len(fetched_list)
-                    tweets = account_tweets_cache[cache_key]
-                    if not tweets:
-                        if not is_hashtag and account.strip().lstrip("@").lower() in self._not_found_accounts:
-                            self._auto_remove_invalid_account(account, target_rule=rule)
-                            stats.setdefault("removed_accounts", []).append(account)
-                            try:
-                                await self.context.send_message(
-                                    umo,
-                                    MessageChain(
-                                        [
-                                            Comp.Plain(
-                                                f"🗑️ [TwitterRSS] 检测到本群订阅的推特 ID @{account} 不存在或已注销，已自动从本群订阅列表中移除。"
-                                            )
-                                        ]
-                                    ),
-                                )
-                            except Exception as e:
-                                logger.warning(f"[TwitterRSS] 发送自动移除无效账号通知失败: {e}")
-                        continue
+            async def produce(key, account, is_hashtag):
+                tweets = []
+                try:
+                    async with fetch_slots:
+                        tweets = await self._fetch_hashtag_tweets(account[1:]) if is_hashtag else await self._fetch_account_tweets(account)
+                    stats["fetched"] += len(tweets)
+                except Exception as exc:
+                    logger.warning(f"[TwitterRSS] 抓取订阅 {account} 失败: {exc}")
+                for queue in subscribers[key]:
+                    queue.put_nowait((key, account, is_hashtag, tweets))
 
-                    if is_hashtag:
-                        for tweet in tweets:
-                            prior = history_by_identity.get(self._tweet_identity(tweet))
-                            if prior is not None:
-                                prior["subscription_hashtags"] = list(dict.fromkeys(
-                                    prior.get("subscription_hashtags", [])
-                                    + ([prior["subscription_hashtag"]] if prior.get("subscription_hashtag") else [])
-                                    + [account[1:]]
-                                ))
-
-                    state_key = f"{umo}::{cache_key}"
-                    acct_seen = set(seen_map.get(state_key, []))
-                    is_first_init = state_key not in init_keys
-
-                    new_tweets = [
-                        t
-                        for t in tweets
-                        if t["id"] not in acct_seen
-                        and self._tweet_identity(t) not in group_seen
-                        and not self._should_skip_tweet(t, rule)
-                    ]
-                    for skipped_t in tweets:
-                        if skipped_t["id"] not in acct_seen and self._should_skip_tweet(skipped_t, rule):
-                            acct_seen.add(skipped_t["id"])
-                    if not new_tweets:
-                        if is_first_init:
-                            init_keys.append(state_key)
-                        seen_map[state_key] = list(acct_seen)[-300:]
-                        continue
-
-                    for nt in new_tweets:
-                        identity = self._tweet_identity(nt)
-                        if identity not in history_by_identity:
-                            self.history_tweets.append(dict(nt))
-                            history_by_identity[identity] = self.history_tweets[-1]
-                        existing_hist_map[nt["id"]] = history_by_identity[identity]
-
-                    if is_first_init and first_run_mark_seen and not manual:
-                        for nt in new_tweets:
-                            acct_seen.add(nt["id"])
-                            group_seen.add(self._tweet_identity(nt))
-                        seen_map[state_key] = list(acct_seen)[-300:]
-                        init_keys.append(state_key)
-                        logger.info(
-                            f"[TwitterRSS] 群[{rule.get('group_name')}] 账号 @{account} 首次初始化，已将 {len(new_tweets)} 条历史推文标记为已读（不重复刷屏推送）"
-                        )
-                        continue
-
-                    if is_first_init:
-                        init_keys.append(state_key)
-                        eval_candidates = new_tweets[-2:]
-                        for nt in new_tweets[:-2]:
-                            acct_seen.add(nt["id"])
-                            group_seen.add(self._tweet_identity(nt))
-                    else:
-                        eval_candidates = new_tweets
-
-                    for idx_t, tweet in enumerate(eval_candidates):
-                        identity = self._tweet_identity(tweet)
-                        if identity in group_seen:
-                            continue
-                        stats["new"] += 1
-                        acct_seen.add(tweet["id"])
-                        group_seen.add(identity)
-                        prepared = await self._prepare_tweet_media(tweet)
-                        eval_Candidates_item = prepared
-                        worth, enriched = await self.evaluate_tweet_for_group(
-                            eval_Candidates_item, rule
-                        )
-                        if tweet["id"] in existing_hist_map:
-                            existing_hist_map[tweet["id"]]["ai_summary"] = enriched.get(
-                                "translated_body", ""
-                            )
-
-                        if worth:
-                            await self.push_tweet_to_umo(enriched, umo)
-                            stats["pushed"] += 1
-
-                    seen_map[state_key] = list(acct_seen)[-300:]
-
-            await self._save_state()
-            await self._save_history()
-            logger.info(
-                f"[TwitterRSS] 推文检查完成：累计拉取 {stats['fetched']} 条，发现新推文 {stats['new']} 条，筛选通过并推送 {stats['pushed']} 条。"
-            )
+            producers = [asyncio.create_task(produce(key, *source)) for key, source in sources.items()]
+            logger.info(f"[TwitterRSS] 并发检查开始：{len(sources)} 个唯一订阅，抓取并发 {fetch_limit}，处理并发 {process_limit}")
+            try:
+                await asyncio.gather(*producers)
+                for queue in queues:
+                    queue.put_nowait(None)
+                await asyncio.gather(*consumers, return_exceptions=True)
+            finally:
+                tasks = producers + consumers + list(prepared_tasks.values())
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                await self._save_state()
+                await self._save_history()
+            logger.info(f"[TwitterRSS] 推文检查完成：累计拉取 {stats['fetched']} 条，发现新推文 {stats['new']} 条，筛选通过并推送 {stats['pushed']} 条。")
             return stats
 
     async def test_push_for_group(
