@@ -30,6 +30,12 @@
             "default": [],
             "hint": "本群独立订阅的推特用户名（无需带 @，如 rasra25、tyrant_madoromi、dayoon292）。"
           },
+          "twitter_hashtags": {
+            "description": "本群订阅的推特标签列表",
+            "type": "list",
+            "default": [],
+            "hint": "按 #标签 搜索不限账号的推文，例如 原神、ブルアカ，可省略 #。需配置标签搜索 RSS 接口；与图片 AI 筛选标签不同。"
+          },
           "account_switches": {
             "description": "单账号独立推送开关",
             "type": "object",
@@ -44,7 +50,8 @@
                   "HlRA__Shine",
                   "shioc621",
                   "shinra__bansho",
-                  "ProjMoonStudio [已修改: 图片:直接推送]"
+                  "ProjMoonStudio [已修改: 图片:直接推送]",
+                  "#桃源郷屋さん"
                 ]
               },
               "ov_dayoon292__push_retweet": {
@@ -382,6 +389,62 @@
                 "condition": {
                   "account_switches.account": "ProjMoonStudio [已修改: 图片:直接推送]"
                 }
+              },
+              "ov_#桃源郷屋さん__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "#桃源郷屋さん"
+                }
+              },
+              "ov_#桃源郷屋さん__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "#桃源郷屋さん"
+                }
+              },
+              "ov_#桃源郷屋さん__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "#桃源郷屋さん"
+                }
+              },
+              "ov_#桃源郷屋さん__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "#桃源郷屋さん"
+                }
               }
             }
           },
@@ -466,6 +529,12 @@
             "default": [],
             "hint": "本群独立订阅的推特用户名（无需带 @，如 rasra25、tyrant_madoromi、dayoon292）。"
           },
+          "twitter_hashtags": {
+            "description": "本群订阅的推特标签列表",
+            "type": "list",
+            "default": [],
+            "hint": "按 #标签 搜索不限账号的推文，例如 原神、ブルアカ，可省略 #。需配置标签搜索 RSS 接口；与图片 AI 筛选标签不同。"
+          },
           "account_switches": {
             "description": "单账号独立推送开关",
             "type": "object",
@@ -515,7 +584,10 @@
                   "siromiso555",
                   "1229Noniha4",
                   "mone_shiratsuyu",
-                  "tabi_0v0"
+                  "tabi_0v0",
+                  "medexiti2000",
+                  "mame_berry_",
+                  "goshichi_shoji"
                 ]
               },
               "ov__munel__push_retweet": {
@@ -2813,6 +2885,174 @@
                 "condition": {
                   "account_switches.account": "tabi_0v0"
                 }
+              },
+              "ov_medexiti2000__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "medexiti2000"
+                }
+              },
+              "ov_medexiti2000__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "medexiti2000"
+                }
+              },
+              "ov_medexiti2000__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "medexiti2000"
+                }
+              },
+              "ov_medexiti2000__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "medexiti2000"
+                }
+              },
+              "ov_mame_berry___push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mame_berry_"
+                }
+              },
+              "ov_mame_berry___push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mame_berry_"
+                }
+              },
+              "ov_mame_berry___push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mame_berry_"
+                }
+              },
+              "ov_mame_berry___push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mame_berry_"
+                }
+              },
+              "ov_goshichi_shoji__push_retweet": {
+                "description": "转贴 (RT)",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "goshichi_shoji"
+                }
+              },
+              "ov_goshichi_shoji__push_reply": {
+                "description": "回复",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "goshichi_shoji"
+                }
+              },
+              "ov_goshichi_shoji__push_text": {
+                "description": "纯文字",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "goshichi_shoji"
+                }
+              },
+              "ov_goshichi_shoji__push_image": {
+                "description": "图片",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "goshichi_shoji"
+                }
               }
             }
           },
@@ -3019,5 +3259,21 @@
     "type": "bool",
     "default": true,
     "hint": "当订阅账号未单独配置【图片】开关时，默认是否推送含图推文。"
+  },
+  "hashtag_search_fallback_urls": {
+    "description": "标签搜索回退源（按顺序尝试）",
+    "type": "list",
+    "default": [
+      "https://nitter.meowing.monster/search/rss?f=tweets&q={query}",
+      "https://nitter.pp.ua/search/rss?f=tweets&q={query}",
+      "https://nitter.netbub.com/search/rss?f=tweets&q={query}"
+    ],
+    "hint": "主源失败后按列表顺序回退。预选 meowing.monster、pp.ua、netbub.com；后两者当前出口可能遇到 403。均需含 {query}。可增删或调整顺序，清空列表关闭回退。"
+  },
+  "hashtag_search_url": {
+    "description": "标签搜索 RSS 接口地址",
+    "type": "string",
+    "default": "https://nitter.kareem.one/search/rss?f=tweets&q={query}",
+    "hint": "默认使用公开 Nitter 搜索 RSS，无需密钥。{query} 自动替换为编码后的 #标签；留空也使用默认源。也可填写自建 RSSHub 搜索 URL。公共实例可能限流或停用。"
   }
 }

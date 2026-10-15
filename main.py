@@ -22,6 +22,7 @@ import shutil
 import time
 import xml.etree.ElementTree as ET
 from typing import Any
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -37,6 +38,13 @@ DAILY_DIGEST_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset
 
 
 # 内置多源回退路由列表
+DEFAULT_HASHTAG_SEARCH_URL = "https://nitter.kareem.one/search/rss?f=tweets&q={query}"
+DEFAULT_HASHTAG_FALLBACK_URLS = [
+    "https://nitter.meowing.monster/search/rss?f=tweets&q={query}",
+    "https://nitter.pp.ua/search/rss?f=tweets&q={query}",
+    "https://nitter.netbub.com/search/rss?f=tweets&q={query}",
+]
+
 FALLBACK_SOURCE_TEMPLATES = [
     "https://fxtwitter.com/{username}/feed.xml",
     "https://fixupx.com/{username}/feed.xml",
@@ -890,6 +898,9 @@ class TwitterRssPlugin(Star):
             return ""
         if s.startswith(("http://", "https://")):
             return s.split()[0].strip()
+        tag_match = re.match(r"^[^\w@#＃]*[#＃](\w+)", s, flags=re.UNICODE)
+        if tag_match:
+            return f"#{tag_match.group(1)}"
         # 移除开头的彩色圆点 Emoji 或特殊符号
         s = re.sub(r"^[^A-Za-z0-9_@]+", "", s).strip()
         # 截取空白符、方括号、圆括号或全角括号之前的账号主体
@@ -1007,17 +1018,19 @@ class TwitterRssPlugin(Star):
 
             # 4. 按照本群当前订阅的纯净账号列表，规范化构建每个账号在 sw 中的独立开关字典，并给已修改账号在 twitter_accounts 中标上 🟠
             clean_accts = self._get_rule_accounts(r)
+            switch_targets = clean_accts + [f"#{tag}" for tag in self._get_rule_hashtags(r)]
             decorated_list: list[str] = []
             normalized_sw: dict[str, str] = {}
             selected = self._extract_clean_handle(sw.get("account")).lower()
 
-            for a in clean_accts:
+            for a in switch_targets:
                 ov = overrides_map.get(a.lower(), {})
                 summary = self._format_override_summary(ov)
-                if summary:
-                    decorated_list.append(f"🟠 {a} [{summary}]")
-                else:
-                    decorated_list.append(a)
+                if a in clean_accts:
+                    if summary:
+                        decorated_list.append(f"🟠 {a} [{summary}]")
+                    else:
+                        decorated_list.append(a)
 
                 display = f"{a} [已修改: {summary}]" if summary else a
                 if a.lower() == selected or "account" not in normalized_sw:
@@ -1052,7 +1065,7 @@ class TwitterRssPlugin(Star):
                     r["__template_key"] = t_key
                     dirty = True
                 gname = str(r.get("group_name") or f"群聊 {idx + 1}")
-                accts = self._get_rule_accounts(r)
+                accts = self._get_rule_accounts(r) + [f"#{tag}" for tag in self._get_rule_hashtags(r)]
                 ov_map = r.get("account_type_overrides") or {}
 
                 acct_panels: dict[str, Any] = {}
@@ -1108,6 +1121,22 @@ class TwitterRssPlugin(Star):
 
             def _apply_options_to_schema_dict(s_dict: dict[str, Any]) -> bool:
                 changed_flag = False
+                search_field = {
+                    "description": "标签搜索 RSS 接口地址",
+                    "type": "string", "default": DEFAULT_HASHTAG_SEARCH_URL,
+                    "hint": "默认使用公开 Nitter 搜索 RSS，无需密钥。{query} 自动替换为编码后的 #标签；留空也使用默认源。也可填写自建 RSSHub 搜索 URL。公共实例可能限流或停用。",
+                }
+                if s_dict.get("hashtag_search_url") != search_field:
+                    s_dict["hashtag_search_url"] = search_field
+                    changed_flag = True
+                fallback_field = {
+                    "description": "标签搜索回退源（按顺序尝试）",
+                    "type": "list", "default": list(DEFAULT_HASHTAG_FALLBACK_URLS),
+                    "hint": "主源失败后按列表顺序回退。预选 meowing.monster、pp.ua、netbub.com；后两者当前出口可能遇到 403。均需含 {query}。可增删或调整顺序，清空列表关闭回退。",
+                }
+                if s_dict.get("hashtag_search_fallback_urls") != fallback_field:
+                    s_dict["hashtag_search_fallback_urls"] = fallback_field
+                    changed_flag = True
                 try:
                     templates_dict = s_dict.get("group_subscriptions", {}).get("templates", {})
                     if not isinstance(templates_dict, dict) or "group_rule" not in templates_dict:
@@ -1124,6 +1153,21 @@ class TwitterRssPlugin(Star):
                             templates_dict[t_key] = copy.deepcopy(base_tmpl)
                             changed_flag = True
                         tmpl_obj = templates_dict[t_key]
+                        tag_field = {
+                            "description": "本群订阅的推特标签列表",
+                            "type": "list", "default": [],
+                            "hint": "按 #标签 搜索不限账号的推文，例如 原神、ブルアカ，可省略 #。需配置标签搜索 RSS 接口；与图片 AI 筛选标签不同。",
+                        }
+                        if tmpl_obj["items"].get("twitter_hashtags") != tag_field:
+                            reordered = {}
+                            for field_key, field_value in tmpl_obj["items"].items():
+                                if field_key == "twitter_hashtags":
+                                    continue
+                                reordered[field_key] = field_value
+                                if field_key == "twitter_accounts":
+                                    reordered["twitter_hashtags"] = tag_field
+                            tmpl_obj["items"] = reordered
+                            changed_flag = True
                         expected_name = (
                             "群聊独立订阅与标签配置"
                             if t_key == "group_rule"
@@ -1279,6 +1323,7 @@ class TwitterRssPlugin(Star):
             "group_name": f"群聊 {gid}" if gid else f"会话 {umo.split(':')[-1]}",
             "target_umo": umo,
             "twitter_accounts": [],
+            "twitter_hashtags": [],
             "account_switches": {},
             "enable_vision_tag_filter": True,
             "must_include_image_tags": ["二次元"],
@@ -1313,6 +1358,123 @@ class TwitterRssPlugin(Star):
                 seen_lower.add(clean_h.lower())
                 res.append(clean_h)
         return res
+
+    @classmethod
+    def _get_rule_hashtags(cls, rule: dict[str, Any]) -> list[str]:
+        tags: dict[str, str] = {}
+        for raw in cls._clean_str_list(rule.get("twitter_hashtags", [])):
+            tag = raw.lstrip("#＃").strip()
+            if tag and re.fullmatch(r"\w+", tag, flags=re.UNICODE):
+                tags.setdefault(tag.casefold(), tag)
+        return list(tags.values())
+
+    @staticmethod
+    def _tweet_identity(tweet_or_id: Any) -> str:
+        if isinstance(tweet_or_id, dict):
+            raw = str(tweet_or_id.get("id") or "")
+            link = str(tweet_or_id.get("link") or "")
+        else:
+            raw, link = str(tweet_or_id), ""
+        match = re.search(r"/status(?:es)?/(\d+)", raw) or re.search(r"/status(?:es)?/(\d+)", link)
+        return match.group(1) if match else raw
+
+    def _matches_rule_subscription(self, tweet: dict[str, Any], rule: dict[str, Any]) -> bool:
+        accounts = {account.casefold() for account in self._get_rule_accounts(rule)}
+        tags = {tag.casefold() for tag in self._get_rule_hashtags(rule)}
+        matched_tags = {str(tag).casefold() for tag in tweet.get("subscription_hashtags", [])}
+        if tweet.get("subscription_hashtag"):
+            matched_tags.add(str(tweet["subscription_hashtag"]).casefold())
+        return str(tweet.get("username", "")).casefold() in accounts or bool(tags & matched_tags)
+
+    def _build_hashtag_search_url(self, tag: str, template: str | None = None) -> str:
+        template = str((self.config.get("hashtag_search_url", "") if template is None else template) or "").strip()
+        if not template:
+            template = DEFAULT_HASHTAG_SEARCH_URL
+        if "{query}" not in template or urlsplit(template).scheme not in ("http", "https"):
+            raise ValueError("hashtag_search_url 必须是包含 {query} 的 HTTP(S) URL")
+        return template.replace("{query}", quote("#" + tag, safe=""))
+
+    def _get_hashtag_search_urls(self, tag: str) -> list[str]:
+        fallbacks = self.config.get("hashtag_search_fallback_urls", DEFAULT_HASHTAG_FALLBACK_URLS)
+        if not isinstance(fallbacks, list):
+            logger.warning("[TwitterRSS] hashtag_search_fallback_urls 必须为列表，已跳过回退配置")
+            fallbacks = []
+        templates = [self.config.get("hashtag_search_url") or DEFAULT_HASHTAG_SEARCH_URL, *fallbacks]
+        urls = []
+        for template in templates:
+            if not isinstance(template, str) or not template.strip():
+                continue
+            try:
+                url = self._build_hashtag_search_url(tag, template)
+            except ValueError as exc:
+                logger.warning(f"[TwitterRSS] 标签搜索源配置无效，已跳过: {exc}")
+                continue
+            if url not in urls:
+                urls.append(url)
+        return urls
+
+    def _parse_hashtag_feed(self, body: str, tag: str) -> list[dict[str, Any]]:
+        root = ET.fromstring(body)
+        if root.tag != "rss" or root.find("channel") is None:
+            raise ValueError("标签搜索接口必须返回 RSS 2.0，不能是 HTML 或 JSON")
+        tweets = []
+        for item in root.findall("./channel/item"):
+            link = (item.findtext("link") or "").strip()
+            match = re.search(r"/([A-Za-z0-9_]{1,15})/status/(\d+)", urlsplit(link).path)
+            if not match:
+                logger.warning(f"[TwitterRSS] 标签 #{tag} 搜索结果缺少作者与推文链接，已跳过一条")
+                continue
+            username, status_id = match.groups()
+            item.find("link").text = f"https://x.com/{username}/status/{status_id}"
+            # Nitter search feeds include 'RT by @retweeter:' titles while the
+            # item link and creator identify the original author.
+            title = item.find("title")
+            if title is not None and title.text:
+                title.text = re.sub(
+                    r"^RT by @[A-Za-z0-9_]+:\s*", f"RT @{username}: ", title.text
+                )
+            for field in ("description", "{http://purl.org/rss/1.0/modules/content/}encoded"):
+                content = item.find(field)
+                if content is not None and content.text:
+                    origin = urlsplit(link)
+                    content.text = re.sub(
+                        re.escape(f"{origin.scheme}://{origin.netloc}") + r"/([A-Za-z0-9_]{1,15})/status/(\d+)",
+                        r"https://x.com/\1/status/\2", content.text,
+                    )
+            # Parse each item under its actual author; a search feed mixes authors.
+            rss = ET.Element("rss", version="2.0")
+            channel = ET.SubElement(rss, "channel")
+            creator = item.findtext("{http://purl.org/dc/elements/1.1/}creator") or item.findtext("author") or username
+            ET.SubElement(channel, "title").text = creator
+            channel.append(item)
+            parsed = self._parse_rss_xml(ET.tostring(rss, encoding="unicode"), username)
+            for tweet in parsed:
+                tweet["id"] = status_id
+                tweet["subscription_hashtag"] = tag
+            tweets.extend(parsed)
+        if root.findall("./channel/item") and not tweets:
+            raise ValueError("搜索结果没有可识别的推文链接，无法确认作者")
+        return sorted(tweets, key=lambda tweet: tweet["timestamp"])
+
+    async def _fetch_hashtag_tweets(self, tag: str) -> list[dict[str, Any]]:
+        urls = self._get_hashtag_search_urls(tag)
+        empty_feed_seen = False
+        for index, url in enumerate(urls):
+            try:
+                resp = await self._http_get_with_recovery(url)
+                resp.raise_for_status()
+                tweets = await asyncio.to_thread(self._parse_hashtag_feed, resp.text, tag)
+                if not tweets:
+                    empty_feed_seen = True
+                    logger.info(f"[TwitterRSS] 标签 #{tag} 搜索源 {urlsplit(url).netloc} 返回空 RSS，尝试其他源")
+                    continue
+                logger.info(f"[TwitterRSS] 标签 #{tag} 搜索成功: {len(tweets)} 条推文，源 {urlsplit(url).netloc}（候选 {index + 1}/{len(urls)}）")
+                return tweets
+            except Exception as exc:
+                logger.warning(f"[TwitterRSS] 标签 #{tag} 搜索源 {urlsplit(url).netloc} 失败: {type(exc).__name__}: {str(exc).strip() or repr(exc)}")
+        if not empty_feed_seen:
+            logger.warning(f"[TwitterRSS] 标签 #{tag} 所有搜索源均失败（{len(urls)} 个候选）")
+        return []
 
     # =========================================================================
     # 后台定时任务循环
@@ -2648,7 +2810,8 @@ class TwitterRssPlugin(Star):
     ) -> bool:
         """判断该推文是否命中了当前账号的【直接推送（不经 AI 判断内容直接推送）】选项"""
         acct = str(
-            tweet.get("retweeter_username")
+            (f"#{tweet['subscription_hashtag']}" if tweet.get("subscription_hashtag") else "")
+            or tweet.get("retweeter_username")
             or tweet.get("username")
             or ""
         ).strip()
@@ -2694,7 +2857,8 @@ class TwitterRssPlugin(Star):
         支持控制：转贴 (retweet)、回复 (reply)、纯文字 (text)、图片 (image)
         """
         acct = str(
-            tweet.get("retweeter_username")
+            (f"#{tweet['subscription_hashtag']}" if tweet.get("subscription_hashtag") else "")
+            or tweet.get("retweeter_username")
             or tweet.get("username")
             or ""
         ).strip().lstrip("@")
@@ -3495,6 +3659,7 @@ class TwitterRssPlugin(Star):
             init_keys: list[str] = self.state.setdefault("initialized_keys", [])
             first_run_mark_seen = bool(self.config.get("first_run_mark_seen", True))
             existing_hist_map = {h["id"]: h for h in self.history_tweets}
+            history_by_identity = {self._tweet_identity(h): h for h in self.history_tweets}
 
             # 按账号缓存本轮拉取结果，避免多个群订阅同一画师时重复请求 RSS
             account_tweets_cache: dict[str, list[dict[str, Any]]] = {}
@@ -3502,20 +3667,30 @@ class TwitterRssPlugin(Star):
             for rule in rules:
                 umo = self._resolve_target_umo(rule.get("target_umo", ""))
                 accounts = self._get_rule_accounts(rule)
-                if not umo or not accounts:
+                tags = self._get_rule_hashtags(rule)
+                if not umo or not (accounts or tags):
                     continue
 
+                # Share identities across account feeds and hashtag searches in a group.
+                group_seen = {
+                    self._tweet_identity(tweet_id)
+                    for key, ids in seen_map.items() if key.startswith(f"{umo}::")
+                    for tweet_id in ids
+                }
+
                 req_delay = max(0.3, float(self.config.get("request_interval_seconds", 1.5) or 1.5))
-                for account in list(accounts):
-                    if account not in account_tweets_cache:
+                sources = [(account, False) for account in accounts] + [(f"#{tag}", True) for tag in tags]
+                for account, is_hashtag in sources:
+                    cache_key = account.casefold() if is_hashtag else account
+                    if cache_key not in account_tweets_cache:
                         if account_tweets_cache:
                             await asyncio.sleep(req_delay + random.uniform(0.1, 0.7))
-                        fetched_list = await self._fetch_account_tweets(account)
-                        account_tweets_cache[account] = fetched_list
+                        fetched_list = await self._fetch_hashtag_tweets(account[1:]) if is_hashtag else await self._fetch_account_tweets(account)
+                        account_tweets_cache[cache_key] = fetched_list
                         stats["fetched"] += len(fetched_list)
-                    tweets = account_tweets_cache[account]
+                    tweets = account_tweets_cache[cache_key]
                     if not tweets:
-                        if account.strip().lstrip("@").lower() in self._not_found_accounts:
+                        if not is_hashtag and account.strip().lstrip("@").lower() in self._not_found_accounts:
                             self._auto_remove_invalid_account(account, target_rule=rule)
                             stats.setdefault("removed_accounts", []).append(account)
                             try:
@@ -3533,14 +3708,26 @@ class TwitterRssPlugin(Star):
                                 logger.warning(f"[TwitterRSS] 发送自动移除无效账号通知失败: {e}")
                         continue
 
-                    state_key = f"{umo}::{account}"
+                    if is_hashtag:
+                        for tweet in tweets:
+                            prior = history_by_identity.get(self._tweet_identity(tweet))
+                            if prior is not None:
+                                prior["subscription_hashtags"] = list(dict.fromkeys(
+                                    prior.get("subscription_hashtags", [])
+                                    + ([prior["subscription_hashtag"]] if prior.get("subscription_hashtag") else [])
+                                    + [account[1:]]
+                                ))
+
+                    state_key = f"{umo}::{cache_key}"
                     acct_seen = set(seen_map.get(state_key, []))
                     is_first_init = state_key not in init_keys
 
                     new_tweets = [
                         t
                         for t in tweets
-                        if t["id"] not in acct_seen and not self._should_skip_tweet(t, rule)
+                        if t["id"] not in acct_seen
+                        and self._tweet_identity(t) not in group_seen
+                        and not self._should_skip_tweet(t, rule)
                     ]
                     for skipped_t in tweets:
                         if skipped_t["id"] not in acct_seen and self._should_skip_tweet(skipped_t, rule):
@@ -3548,16 +3735,20 @@ class TwitterRssPlugin(Star):
                     if not new_tweets:
                         if is_first_init:
                             init_keys.append(state_key)
+                        seen_map[state_key] = list(acct_seen)[-300:]
                         continue
 
                     for nt in new_tweets:
-                        if nt["id"] not in existing_hist_map:
+                        identity = self._tweet_identity(nt)
+                        if identity not in history_by_identity:
                             self.history_tweets.append(dict(nt))
-                            existing_hist_map[nt["id"]] = self.history_tweets[-1]
+                            history_by_identity[identity] = self.history_tweets[-1]
+                        existing_hist_map[nt["id"]] = history_by_identity[identity]
 
                     if is_first_init and first_run_mark_seen and not manual:
                         for nt in new_tweets:
                             acct_seen.add(nt["id"])
+                            group_seen.add(self._tweet_identity(nt))
                         seen_map[state_key] = list(acct_seen)[-300:]
                         init_keys.append(state_key)
                         logger.info(
@@ -3570,12 +3761,17 @@ class TwitterRssPlugin(Star):
                         eval_candidates = new_tweets[-2:]
                         for nt in new_tweets[:-2]:
                             acct_seen.add(nt["id"])
+                            group_seen.add(self._tweet_identity(nt))
                     else:
                         eval_candidates = new_tweets
 
                     for idx_t, tweet in enumerate(eval_candidates):
+                        identity = self._tweet_identity(tweet)
+                        if identity in group_seen:
+                            continue
                         stats["new"] += 1
                         acct_seen.add(tweet["id"])
+                        group_seen.add(identity)
                         prepared = await self._prepare_tweet_media(tweet)
                         eval_Candidates_item = prepared
                         worth, enriched = await self.evaluate_tweet_for_group(
@@ -3707,7 +3903,6 @@ class TwitterRssPlugin(Star):
 
         for rule in rules:
             umo = self._resolve_target_umo(rule.get("target_umo", ""))
-            group_accts = {a.lower() for a in self._get_rule_accounts(rule)}
             if not umo:
                 continue
 
@@ -3715,7 +3910,7 @@ class TwitterRssPlugin(Star):
                 t
                 for t in self.history_tweets
                 if t.get("timestamp", 0) >= cutoff
-                and (not group_accts or str(t.get("username", "")).lower() in group_accts)
+                and self._matches_rule_subscription(t, rule)
             ]
             if not recent_tweets:
                 continue
@@ -4024,6 +4219,38 @@ class TwitterRssPlugin(Star):
         yield event.plain_result(f"🗑️ 已从当前群聊【{rule.get('group_name')}】移除推特订阅: @{acct}")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
+    @tw.command("tag_add")
+    async def tw_tag_add(self, event: AstrMessageEvent, tag: str):
+        """为当前群聊订阅推特话题标签。"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("权限不足：仅管理员可修改订阅标签。")
+            return
+        normalized = self._get_rule_hashtags({"twitter_hashtags": [tag]})
+        if not normalized:
+            yield event.plain_result("请填写单个标签，如 /tw tag_add 原神；标签不能包含空格或搜索运算符。")
+            return
+        rule = self._find_or_create_group_rule(event, create_if_missing=True)
+        rule["twitter_hashtags"] = self._get_rule_hashtags({"twitter_hashtags": self._get_rule_hashtags(rule) + normalized})
+        self._save_plugin_config()
+        yield event.plain_result(f"已订阅标签 #{normalized[0]}，将通过配置的搜索源或默认 Nitter 源抓取。")
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @tw.command("tag_del")
+    async def tw_tag_del(self, event: AstrMessageEvent, tag: str):
+        """移除当前群聊的标签订阅。"""
+        if not self._has_admin_permission(event):
+            yield event.plain_result("权限不足：仅管理员可修改订阅标签。")
+            return
+        rule = self._find_or_create_group_rule(event, create_if_missing=False)
+        if not rule:
+            yield event.plain_result("当前群聊尚未创建订阅配置。")
+            return
+        normalized = tag.strip().lstrip("#＃").casefold()
+        rule["twitter_hashtags"] = [value for value in self._get_rule_hashtags(rule) if value.casefold() != normalized]
+        self._save_plugin_config()
+        yield event.plain_result(f"已移除标签订阅 #{tag.strip().lstrip('#＃')}。")
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("must_add")
     async def tw_must_add(self, event: AstrMessageEvent, tag: str):
         """为当前群聊添加【必须包含】图片标签（全部命中才通过）"""
@@ -4167,6 +4394,7 @@ class TwitterRssPlugin(Star):
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
         accounts = self._get_rule_accounts(rule)
         formatted_accounts = [self._format_account_with_overrides(a, rule) for a in accounts]
+        hashtags = self._get_rule_hashtags(rule)
         must_tags = self._clean_str_list(rule.get("must_include_image_tags", []))
         any_tags = self._clean_str_list(rule.get("any_include_image_tags", []))
         exc_tags = self._clean_str_list(rule.get("exclude_image_tags", []))
@@ -4178,6 +4406,7 @@ class TwitterRssPlugin(Star):
             f"📡 【当前群聊独立配置：{rule.get('group_name')}】\n"
             f"• 会话 ID: {rule.get('target_umo')}\n"
             f"• 本群订阅账号 ({len(accounts)}): {', '.join(formatted_accounts) if formatted_accounts else '暂无 (发送 /tw add <账号> 添加)'}\n"
+            f"• 本群订阅标签 ({len(hashtags)}): {', '.join('#' + tag for tag in hashtags) if hashtags else '暂无 (发送 /tw tag_add <标签> 添加)'}\n"
             f"• 全局默认推文类型开关: "
             f"转贴={'推送' if g_defs['retweet'] else '跳过'} | "
             f"回复={'推送' if g_defs['reply'] else '跳过'} | "
@@ -4351,11 +4580,12 @@ class TwitterRssPlugin(Star):
             return
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
         accounts = self._get_rule_accounts(rule)
-        if not accounts:
-            yield event.plain_result("当前群聊还没有订阅任何推特账号，请先使用 `/tw add <账号名>` 添加。")
+        hashtags = self._get_rule_hashtags(rule)
+        if not accounts and not hashtags:
+            yield event.plain_result("当前群聊尚无订阅，请使用 /tw add <账号> 或 /tw tag_add <标签> 添加。")
             return
         yield event.plain_result(
-            f"🔄 正在按本群【{rule.get('group_name')}】独立规则检查 {len(accounts)} 个推特账号的新推文，请稍候..."
+            f"🔄 正在按本群【{rule.get('group_name')}】独立规则检查 {len(accounts)} 个账号、{len(hashtags)} 个标签的新推文，请稍候..."
         )
         stats = await self.check_all_accounts(manual=True, target_rule=rule)
         removed_list = stats.get("removed_accounts") or []
