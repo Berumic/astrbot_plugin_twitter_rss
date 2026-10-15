@@ -879,10 +879,42 @@ class TwitterRssPlugin(Star):
                 logger.warning(f"[TwitterRSS] 保存插件配置失败: {e}")
         self._sync_subscribed_accounts_to_schema()
 
+    @staticmethod
+    def _extract_clean_handle(raw_str: Any) -> str:
+        """
+        从可能带有状态圆点/修改标记的显示字符串（如 '🟠 ProjMoonStudio [纯文字:直接推送]' 或 '⚪ rasra25'）
+        中提取纯净的推特账号名（如 'ProjMoonStudio'）。
+        """
+        s = str(raw_str or "").strip()
+        if not s:
+            return ""
+        if s.startswith(("http://", "https://")):
+            return s.split()[0].strip()
+        # 移除开头的彩色圆点 Emoji 或特殊符号
+        s = re.sub(r"^[^A-Za-z0-9_@]+", "", s).strip()
+        # 截取空白符、方括号、圆括号或全角括号之前的账号主体
+        s = re.split(r"[\s\[\(（【]", s, maxsplit=1)[0].strip().lstrip("@")
+        return s
+
+    @classmethod
+    def _format_override_summary(cls, ov_dict: dict[str, Any]) -> str:
+        """生成单账号已修改开关的简短中文摘要，如 '转贴:推送,纯文字:直接推送'"""
+        if not isinstance(ov_dict, dict) or not ov_dict:
+            return ""
+        label_map = {"retweet": "转贴", "reply": "回复", "text": "纯文字", "image": "图片"}
+        mode_cn = {"direct": "直接推送", "push": "推送", "skip": "不推送"}
+        parts: list[str] = []
+        for k in ("retweet", "reply", "text", "image"):
+            if k in ov_dict:
+                m = cls._parse_switch_mode(ov_dict.get(k))
+                if m in mode_cn:
+                    parts.append(f"{label_map[k]}:{mode_cn[m]}")
+        return ",".join(parts)
+
     def _ingest_account_switches_from_rules(self) -> bool:
         """
         将各群 group_rule['account_switches'] (WebUI 子类面板) 中选择的账号与开关同步持久化到
-        group_rule['account_type_overrides'] 中，使一个群可以对多个不同订阅账号分别保存独立开关。
+        group_rule['account_type_overrides'] 中，并自动为已修改账号在列表与下拉框中加上 🟠 颜色标记。
         """
         dirty = False
         key_map = {
@@ -891,90 +923,165 @@ class TwitterRssPlugin(Star):
             "text": "push_text",
             "image": "push_image",
         }
+        mode_to_ui = {"direct": "直接推送", "push": "推送", "skip": "不推送"}
+
         for r in self._get_group_rules():
-            sw = r.get("account_switches")
-            if not isinstance(sw, dict):
-                continue
             overrides_map = r.setdefault("account_type_overrides", {})
+            if not isinstance(overrides_map, dict):
+                overrides_map = {}
+                r["account_type_overrides"] = overrides_map
 
-            # 1. 读取顶层当前选中的 account 及其四项开关
-            sel_acct = str(sw.get("account") or "").strip().lstrip("@")
-            if sel_acct:
-                acct_lower = sel_acct.lower()
-                acct_ov = overrides_map.get(acct_lower, {})
-                if not isinstance(acct_ov, dict):
-                    acct_ov = {}
-                any_custom = False
-                new_ov: dict[str, bool] = {}
-                for k_short, k_cfg in key_map.items():
-                    tri = self._parse_tri_state(sw.get(k_cfg))
-                    if tri is not None:
-                        new_ov[k_short] = tri
-                        any_custom = True
-                if any_custom:
-                    if acct_ov != new_ov:
-                        overrides_map[acct_lower] = new_ov
-                        dirty = True
-                elif acct_lower in overrides_map and all(
-                    str(sw.get(k_cfg) or "默认").strip() in ("默认", "默认(跟随全局)", "default")
-                    for k_cfg in key_map.values()
-                ):
-                    overrides_map.pop(acct_lower, None)
-                    dirty = True
+            # 先将 overrides_map 中旧的 bool 值统一规范化为 'push'/'skip'/'direct'
+            for k_acct, ov_val in list(overrides_map.items()):
+                if isinstance(ov_val, dict):
+                    norm_ov: dict[str, str] = {}
+                    for ks, mv in ov_val.items():
+                        pm = self._parse_switch_mode(mv)
+                        if pm is not None:
+                            norm_ov[ks] = pm
+                    if norm_ov:
+                        overrides_map[k_acct] = norm_ov
+                    else:
+                        overrides_map.pop(k_acct, None)
 
-            # 2. 读取动态生成的已配置账号子项 (ov_<account>)
-            for sub_key, sub_val in list(sw.items()):
-                if not sub_key.startswith("ov_") or not isinstance(sub_val, dict):
-                    continue
-                sub_acct = sub_key[3:].strip().lstrip("@").lower()
-                if not sub_acct:
-                    continue
-                new_ov2: dict[str, bool] = {}
-                for k_short, k_cfg in key_map.items():
-                    tri = self._parse_tri_state(sub_val.get(k_cfg))
-                    if tri is not None:
-                        new_ov2[k_short] = tri
-                if new_ov2:
-                    if overrides_map.get(sub_acct) != new_ov2:
-                        overrides_map[sub_acct] = new_ov2
+            sw = r.get("account_switches")
+            if isinstance(sw, dict):
+                sel_acct = self._extract_clean_handle(sw.get("account"))
+                if sel_acct:
+                    acct_lower = sel_acct.lower()
+                    new_ov: dict[str, str] = {}
+                    for k_short, k_cfg in key_map.items():
+                        pm = self._parse_switch_mode(sw.get(k_cfg))
+                        if pm is not None:
+                            new_ov[k_short] = pm
+                    if new_ov:
+                        if overrides_map.get(acct_lower) != new_ov:
+                            overrides_map[acct_lower] = new_ov
+                            dirty = True
+                    elif acct_lower in overrides_map and all(
+                        self._parse_switch_mode(sw.get(k_cfg)) is None
+                        for k_cfg in key_map.values()
+                    ):
+                        overrides_map.pop(acct_lower, None)
                         dirty = True
-                elif sub_acct in overrides_map:
-                    overrides_map.pop(sub_acct, None)
-                    dirty = True
+
+            # 同步更新本群 `twitter_accounts` 列表的显示文本：已修改账号自动标上 🟠 与修改详情，未修改账号保持清爽原名
+            clean_accts = self._get_rule_accounts(r)
+            decorated_list: list[str] = []
+            for a in clean_accts:
+                ov = overrides_map.get(a.lower(), {})
+                summary = self._format_override_summary(ov)
+                if summary:
+                    decorated_list.append(f"🟠 {a} [{summary}]")
+                else:
+                    decorated_list.append(a)
+            if r.get("twitter_accounts") != decorated_list:
+                r["twitter_accounts"] = decorated_list
+                dirty = True
+
+            # 若当前选中的账号已有独立配置，同步回显其标签与四项开关
+            if isinstance(sw, dict):
+                sel_acct = self._extract_clean_handle(sw.get("account"))
+                if not sel_acct and clean_accts:
+                    sel_acct = clean_accts[0]
+                if sel_acct:
+                    ov = overrides_map.get(sel_acct.lower(), {})
+                    summary = self._format_override_summary(ov)
+                    expected_label = f"🟠 {sel_acct} [{summary}]" if summary else f"⚪ {sel_acct}"
+                    if sw.get("account") != expected_label:
+                        sw["account"] = expected_label
+                        dirty = True
+                    for k_short, k_cfg in key_map.items():
+                        expected_ui = mode_to_ui.get(ov.get(k_short, ""), "默认")
+                        if sw.get(k_cfg) != expected_ui:
+                            sw[k_cfg] = expected_ui
+                            dirty = True
 
         return dirty
 
     def _sync_subscribed_accounts_to_schema(self):
         """
-        将已订阅的推特账号自动同步写入 group_rule.items.account_switches.items.account 的下拉选项 (options)，
-        使其作为【群聊独立订阅与标签配置】的子类（与本群订阅的推特账号列表并列显示）且可直接下拉选择账号。
+        将每个群聊各自已订阅的推特账号独立同步至对应群卡片的下拉选项 (options) 中（互不混串），
+        并对已修改独立开关的账号用 🟠 颜色徽章标记，未修改账号用 ⚪ 标记。
         """
         try:
+            import copy
             self._ingest_account_switches_from_rules()
 
-            all_accts: list[str] = []
-            for r in self._get_group_rules():
-                for a in self._get_rule_accounts(r):
-                    if a and a not in all_accts:
-                        all_accts.append(a)
+            rules = self._get_group_rules()
+
+            def _build_group_options(rule_obj: dict[str, Any]) -> list[str]:
+                accts = self._get_rule_accounts(rule_obj)
+                ov_map = rule_obj.get("account_type_overrides") or {}
+                opts: list[str] = []
+                for a in accts:
+                    ov = ov_map.get(a.lower(), {}) if isinstance(ov_map, dict) else {}
+                    summary = self._format_override_summary(ov)
+                    if summary:
+                        opts.append(f"🟠 {a} [{summary}]")
+                    else:
+                        opts.append(f"⚪ {a}")
+                return opts
+
+            # 为每个群分配专属 template_key（第1个群用 group_rule，第2个群起用 group_rule_1, group_rule_2...）
+            # 从而让每个群的「推特账号」下拉列表严格只显示当前群聊已订阅的账号！
+            per_group_options: dict[str, tuple[str, list[str]]] = {}
+            for idx, r in enumerate(rules):
+                t_key = "group_rule" if idx == 0 else f"group_rule_{idx}"
+                if r.get("__template_key") != t_key:
+                    r["__template_key"] = t_key
+                gname = str(r.get("group_name") or f"群聊 {idx + 1}")
+                per_group_options[t_key] = (gname, _build_group_options(r))
+
+            if not per_group_options:
+                per_group_options["group_rule"] = ("群聊独立订阅与标签配置", [])
 
             def _apply_options_to_schema_dict(s_dict: dict[str, Any]) -> bool:
                 changed_flag = False
                 try:
-                    sw_items = (
-                        s_dict.get("group_subscriptions", {})
-                        .get("templates", {})
-                        .get("group_rule", {})
-                        .get("items", {})
-                        .get("account_switches", {})
-                        .get("items", {})
-                    )
-                    acct_item = sw_items.get("account") if isinstance(sw_items, dict) else None
-                    if isinstance(acct_item, dict):
-                        if acct_item.get("options") != all_accts:
-                            acct_item["options"] = list(all_accts)
-                            acct_item["default"] = all_accts[0] if all_accts else ""
+                    templates_dict = s_dict.get("group_subscriptions", {}).get("templates", {})
+                    if not isinstance(templates_dict, dict) or "group_rule" not in templates_dict:
+                        return False
+                    base_tmpl = copy.deepcopy(templates_dict["group_rule"])
+
+                    # 清理已经不存在的多余 group_rule_N 模板
+                    for old_k in list(templates_dict.keys()):
+                        if old_k.startswith("group_rule_") and old_k not in per_group_options:
+                            templates_dict.pop(old_k, None)
                             changed_flag = True
+
+                    for t_key, (gname, opts) in per_group_options.items():
+                        if t_key not in templates_dict:
+                            templates_dict[t_key] = copy.deepcopy(base_tmpl)
+                            changed_flag = True
+                        tmpl_obj = templates_dict[t_key]
+                        expected_name = (
+                            "群聊独立订阅与标签配置"
+                            if t_key == "group_rule"
+                            else f"群聊独立订阅与标签配置 ({gname})"
+                        )
+                        if tmpl_obj.get("name") != expected_name:
+                            tmpl_obj["name"] = expected_name
+                            changed_flag = True
+
+                        sw_items = (
+                            tmpl_obj.get("items", {})
+                            .get("account_switches", {})
+                            .get("items", {})
+                        )
+                        if isinstance(sw_items, dict):
+                            for fk in ("push_retweet", "push_reply", "push_text", "push_image"):
+                                if isinstance(sw_items.get(fk), dict):
+                                    target_opts = ["默认", "推送", "直接推送", "不推送"]
+                                    if sw_items[fk].get("options") != target_opts:
+                                        sw_items[fk]["options"] = target_opts
+                                        changed_flag = True
+                            acct_item = sw_items.get("account")
+                            if isinstance(acct_item, dict):
+                                if acct_item.get("options") != opts:
+                                    acct_item["options"] = list(opts)
+                                    acct_item["default"] = opts[0] if opts else ""
+                                    changed_flag = True
                 except Exception:
                     pass
                 return changed_flag
@@ -1014,7 +1121,8 @@ class TwitterRssPlugin(Star):
         return [
             r
             for r in raw
-            if isinstance(r, dict) and r.get("__template_key", "group_rule") == "group_rule"
+            if isinstance(r, dict)
+            and str(r.get("__template_key", "group_rule")).startswith("group_rule")
         ]
 
     def _get_account_rule_cards(self) -> list[dict[str, Any]]:
@@ -1120,7 +1228,15 @@ class TwitterRssPlugin(Star):
 
     @classmethod
     def _get_rule_accounts(cls, rule: dict[str, Any]) -> list[str]:
-        return [x.lstrip("@") for x in cls._clean_str_list(rule.get("twitter_accounts", []))]
+        raw_list = cls._clean_str_list(rule.get("twitter_accounts", []))
+        res: list[str] = []
+        seen_lower: set[str] = set()
+        for item in raw_list:
+            clean_h = cls._extract_clean_handle(item)
+            if clean_h and clean_h.lower() not in seen_lower:
+                seen_lower.add(clean_h.lower())
+                res.append(clean_h)
+        return res
 
     # =========================================================================
     # 后台定时任务循环
@@ -2320,20 +2436,35 @@ class TwitterRssPlugin(Star):
         return f"data:{mime};base64,{b64}"
 
     @staticmethod
-    def _parse_tri_state(val: Any) -> bool | None:
-        """解析三态开关配置：'推送'/True -> True；'不推送'/False -> False；'默认(跟随全局)'/None/'' -> None"""
+    def _parse_switch_mode(val: Any) -> str | None:
+        """
+        解析四态开关配置：
+        - '直接推送' / 'direct' -> 'direct' (不经AI判断内容直接推送)
+        - '推送' / True -> 'push' (允许推送，经过群AI筛选)
+        - '不推送' / False -> 'skip' (直接跳过不推送)
+        - '默认' / None / '' -> None (跟随全局默认设置)
+        """
         if val is None:
             return None
         if isinstance(val, bool):
-            return val
+            return "push" if val else "skip"
         s = str(val).strip().lower()
         if not s or s in ("默认", "默认(跟随全局)", "跟随全局", "default", "inherit", "auto", "reset"):
             return None
-        if s in ("推送", "开启", "开", "是", "允许", "true", "on", "yes", "1"):
-            return True
-        if s in ("不推送", "跳过", "关闭", "关", "否", "禁止", "false", "off", "no", "0"):
-            return False
+        if s in ("直接推送", "直推", "免审", "免ai", "直接", "direct", "force", "bypass"):
+            return "direct"
+        if s in ("推送", "开启", "开", "是", "允许", "true", "on", "yes", "1", "push"):
+            return "push"
+        if s in ("不推送", "跳过", "关闭", "关", "否", "禁止", "false", "off", "no", "0", "skip"):
+            return "skip"
         return None
+
+    @classmethod
+    def _parse_tri_state(cls, val: Any) -> bool | None:
+        mode = cls._parse_switch_mode(val)
+        if mode is None:
+            return None
+        return mode in ("push", "direct")
 
     def _get_global_type_defaults(self, group_rule: dict[str, Any] | None = None) -> dict[str, bool]:
         """
@@ -2373,63 +2504,101 @@ class TwitterRssPlugin(Star):
     ) -> dict[str, Any]:
         """
         获取指定订阅账号在当前群聊下的 4 类推文（转贴/回复/纯文字/图片）推送策略：
-        优先读取本群卡片内的 `account_rules` 单账号开关，未单独配置的项自动回退使用全局默认设置。
+        - policy[k]: bool (是否允许进入推送流程)
+        - policy['modes'][k]: 'push' | 'direct' | 'skip' ('direct' 表示不经过 AI 判断内容直接推送)
+        - policy['sources'][k]: '单独设置' | '全局默认'
         """
         defaults = self._get_global_type_defaults(group_rule)
-        policy: dict[str, Any] = {
-            "retweet": defaults["retweet"],
-            "reply": defaults["reply"],
-            "text": defaults["text"],
-            "image": defaults["image"],
-            "sources": {
-                "retweet": "全局默认",
-                "reply": "全局默认",
-                "text": "全局默认",
-                "image": "全局默认",
-            },
+        modes: dict[str, str] = {
+            k: ("push" if defaults[k] else "skip")
+            for k in ("retweet", "reply", "text", "image")
         }
-        acct_lower = (account or "").strip().lstrip("@").lower()
-        if not acct_lower:
-            return policy
-
-        key_map = {
-            "retweet": "push_retweet",
-            "reply": "push_reply",
-            "text": "push_text",
-            "image": "push_image",
+        sources: dict[str, str] = {
+            "retweet": "全局默认",
+            "reply": "全局默认",
+            "text": "全局默认",
+            "image": "全局默认",
         }
 
-        if isinstance(group_rule, dict):
+        acct_clean = self._extract_clean_handle(account)
+        acct_lower = acct_clean.lower()
+        if acct_lower and isinstance(group_rule, dict):
+            key_map = {
+                "retweet": "push_retweet",
+                "reply": "push_reply",
+                "text": "push_text",
+                "image": "push_image",
+            }
             # 1. 先读取本群持久化的多账号独立开关字典 account_type_overrides
             overrides_map = group_rule.get("account_type_overrides")
             if isinstance(overrides_map, dict):
                 acct_ov = overrides_map.get(acct_lower)
                 if isinstance(acct_ov, dict):
                     for k_short in ("retweet", "reply", "text", "image"):
-                        tri = self._parse_tri_state(acct_ov.get(k_short))
-                        if tri is not None:
-                            policy[k_short] = tri
-                            policy["sources"][k_short] = "单独设置"
+                        pm = self._parse_switch_mode(acct_ov.get(k_short))
+                        if pm is not None:
+                            modes[k_short] = pm
+                            sources[k_short] = "单独设置"
 
-            # 2. 读取本群配置卡片内的子类 account_switches (type: object，与 twitter_accounts 并列)
+            # 2. 读取本群配置卡片内的子类 account_switches
             sw = group_rule.get("account_switches")
             if isinstance(sw, dict):
-                sw_acct = str(sw.get("account") or "").strip().lstrip("@").lower()
+                sw_acct = self._extract_clean_handle(sw.get("account")).lower()
                 if sw_acct == acct_lower:
                     for k_short, k_cfg in key_map.items():
-                        tri = self._parse_tri_state(sw.get(k_cfg))
-                        if tri is not None:
-                            policy[k_short] = tri
-                            policy["sources"][k_short] = "单独设置"
-                sub_sw = sw.get(f"ov_{acct_lower}") or sw.get(f"ov_{account.strip().lstrip('@')}")
-                if isinstance(sub_sw, dict):
-                    for k_short, k_cfg in key_map.items():
-                        tri = self._parse_tri_state(sub_sw.get(k_cfg))
-                        if tri is not None:
-                            policy[k_short] = tri
-                            policy["sources"][k_short] = "单独设置"
+                        pm = self._parse_switch_mode(sw.get(k_cfg))
+                        if pm is not None:
+                            modes[k_short] = pm
+                            sources[k_short] = "单独设置"
 
-        return policy
+        return {
+            "retweet": modes["retweet"] != "skip",
+            "reply": modes["reply"] != "skip",
+            "text": modes["text"] != "skip",
+            "image": modes["image"] != "skip",
+            "modes": modes,
+            "sources": sources,
+        }
+
+    def _is_direct_push_tweet(
+        self, tweet: dict[str, Any], group_rule: dict[str, Any] | None = None
+    ) -> bool:
+        """判断该推文是否命中了当前账号的【直接推送（不经 AI 判断内容直接推送）】选项"""
+        acct = str(
+            tweet.get("retweeter_username")
+            or tweet.get("username")
+            or ""
+        ).strip()
+        policy = self._get_account_type_policy(acct, group_rule)
+        modes = policy.get("modes", {})
+
+        text = str(tweet.get("text") or "").strip()
+        is_rt = bool(
+            tweet.get("is_retweet")
+            or re.match(r"^(?:RT|R\s+to|Retweet)\s+@", text, flags=re.I)
+        )
+        is_rep = bool(
+            tweet.get("is_reply")
+            or re.match(r"^(?:Re\s+@|@)", text, flags=re.I)
+        )
+        has_images = (
+            bool(tweet.get("images"))
+            or bool(tweet.get("local_images"))
+            or bool(tweet.get("has_video"))
+            or bool(tweet.get("video_urls"))
+        )
+        if not has_images and isinstance(tweet.get("quote_info"), dict):
+            has_images = bool(tweet["quote_info"].get("display_images"))
+
+        if is_rt and modes.get("retweet") == "direct":
+            return True
+        if is_rep and modes.get("reply") == "direct":
+            return True
+        if has_images and modes.get("image") == "direct":
+            return True
+        if not has_images and modes.get("text") == "direct":
+            return True
+        return False
 
     def _should_skip_tweet(
         self,
@@ -2915,6 +3084,40 @@ class TwitterRssPlugin(Star):
                 "reason": "模型调用异常，默认放行",
             }
 
+    async def _translate_only_without_filter(
+        self, prepared_tweet: dict[str, Any]
+    ) -> dict[str, str | list[str]]:
+        """用于【直接推送】模式：不做任何 AI 价值/标签淘汰判断，仅对非空正文和标签进行中文直译"""
+        orig_body = str(prepared_tweet.get("orig_body") or "").strip()
+        orig_tags = prepared_tweet.get("orig_tags") or []
+        if not orig_body and not orig_tags:
+            return {"translated_body": "", "translated_tags": []}
+
+        text_provider_id = str(self.config.get("text_provider_id", "") or "").strip()
+        system_prompt = "你是一个专业的推文直译助手。请直接将推文正文与标签翻译为中文，严格返回 JSON 对象。"
+        prompt = (
+            f"原推文正文: {json.dumps(orig_body, ensure_ascii=False)}\n"
+            f"原推文标签列表: {json.dumps(orig_tags, ensure_ascii=False)}\n\n"
+            "【要求】遇到人名（如画师、歌手、VTuber、创作者昵称、角色名）请尽量保留原文不翻译。\n"
+            "请严格返回如下 JSON 格式：\n"
+            "{\n"
+            '  "translated_body": "若原推文正文非空，输出纯中文译文；若原推文正文为空，输出 \"\"",\n'
+            '  "translated_tags": ["#标签译文1", "#标签译文2"]\n'
+            "}"
+        )
+        try:
+            raw_resp = await self._call_llm(
+                prompt=prompt, system_prompt=system_prompt, provider_id=text_provider_id
+            )
+            data = self._extract_json_dict(raw_resp)
+            return {
+                "translated_body": str(data.get("translated_body") or "").strip() if orig_body else "",
+                "translated_tags": self._normalize_translated_tags(data.get("translated_tags")),
+            }
+        except Exception as e:
+            logger.debug(f"[TwitterRSS] 直接推送模式翻译跳过: {e}")
+            return {"translated_body": "", "translated_tags": []}
+
     async def evaluate_tweet_for_group(
         self, prepared_tweet: dict[str, Any], group_rule: dict[str, Any]
     ) -> tuple[bool, dict[str, Any]]:
@@ -2926,6 +3129,18 @@ class TwitterRssPlugin(Star):
             return False, prepared_tweet
 
         enriched = dict(prepared_tweet)
+
+        # 若该账号对应推文类型设置为【直接推送】，则不经过 AI 判断内容是否值得推送，直接翻译并放行！
+        if self._is_direct_push_tweet(enriched, group_rule):
+            logger.info(
+                f"[TwitterRSS] 群[{group_rule.get('group_name')}] 推文 {enriched.get('id')} (@{enriched.get('username')}) 命中单账号【直接推送】开关，跳过 AI 过滤判断直接推送！"
+            )
+            tr = await self._translate_only_without_filter(enriched)
+            if tr.get("translated_body") and enriched.get("orig_body"):
+                enriched["translated_body"] = tr["translated_body"]
+            if tr.get("translated_tags"):
+                enriched["translated_tags"] = tr["translated_tags"]
+            return True, enriched
         has_images = len(enriched.get("local_images", [])) > 0
         vision_enabled = bool(group_rule.get("enable_vision_tag_filter", True))
         text_ai_enabled = bool(group_rule.get("enable_text_ai_filter", True))
@@ -3849,16 +4064,19 @@ class TwitterRssPlugin(Star):
         )
 
     def _format_account_with_overrides(self, account: str, rule: dict[str, Any]) -> str:
-        pol = self._get_account_type_policy(account, rule)
+        clean_a = self._extract_clean_handle(account)
+        pol = self._get_account_type_policy(clean_a, rule)
         srcs = pol.get("sources", {})
+        modes = pol.get("modes", {})
         label_map = {"retweet": "转贴", "reply": "回复", "text": "纯文字", "image": "图片"}
+        mode_short = {"direct": "直推", "push": "开", "skip": "关"}
         custom_parts: list[str] = []
         for k, cn in label_map.items():
             if srcs.get(k) == "单独设置":
-                custom_parts.append(f"{cn}:{'开' if pol[k] else '关'}")
+                custom_parts.append(f"{cn}:{mode_short.get(modes.get(k, ''), '开')}")
         if custom_parts:
-            return f"{account}[{','.join(custom_parts)}]"
-        return account
+            return f"🟠{clean_a}[{','.join(custom_parts)}]"
+        return clean_a
 
     @tw.command("list")
     async def tw_list(self, event: AstrMessageEvent):
@@ -3962,16 +4180,22 @@ class TwitterRssPlugin(Star):
             "image": "push_image",
         }
 
+        mode_desc = {
+            "direct": "⚡ 直接推送 (免AI审核)",
+            "push": "✅ 推送 (经AI筛选)",
+            "skip": "🚫 不推送",
+        }
         if not tweet_type.strip():
             pol = self._get_account_type_policy(acct, rule)
             srcs = pol.get("sources", {})
+            modes = pol.get("modes", {})
             yield event.plain_result(
                 f"⚙️ 账号 @{acct} 在本群【{rule.get('group_name')}】的推文类型推送策略：\n"
-                f"• 转贴 (retweet): {'✅ 推送' if pol['retweet'] else '🚫 不推送'} （{srcs['retweet']}）\n"
-                f"• 回复 (reply): {'✅ 推送' if pol['reply'] else '🚫 不推送'} （{srcs['reply']}）\n"
-                f"• 纯文字 (text): {'✅ 推送' if pol['text'] else '🚫 不推送'} （{srcs['text']}）\n"
-                f"• 图片 (image): {'✅ 推送' if pol['image'] else '🚫 不推送'} （{srcs['image']}）\n\n"
-                f"💡 修改示例：`/tw set {acct} <转贴|回复|纯文字|图片|全部> <开启|关闭|默认>`"
+                f"• 转贴 (retweet): {mode_desc.get(modes.get('retweet', 'skip'))} （{srcs['retweet']}）\n"
+                f"• 回复 (reply): {mode_desc.get(modes.get('reply', 'skip'))} （{srcs['reply']}）\n"
+                f"• 纯文字 (text): {mode_desc.get(modes.get('text', 'push'))} （{srcs['text']}）\n"
+                f"• 图片 (image): {mode_desc.get(modes.get('image', 'push'))} （{srcs['image']}）\n\n"
+                f"💡 修改示例：`/tw set {acct} <转贴|回复|纯文字|图片|全部> <直接推送|推送|不推送|默认>`"
             )
             return
 
@@ -3986,18 +4210,17 @@ class TwitterRssPlugin(Star):
         if t_key == "all" and not state_str.strip():
             state_str = "默认"
 
-        tri_val = self._parse_tri_state(state_str)
+        parsed_mode = self._parse_switch_mode(state_str)
         is_reset_default = state_str.strip().lower() in (
             "默认", "默认(跟随全局)", "跟随全局", "default", "inherit", "auto", "reset"
         )
-        if tri_val is None and not is_reset_default:
+        if parsed_mode is None and not is_reset_default:
             yield event.plain_result(
-                f"⚠️ 请指定有效的开关状态（`开启` / `关闭` / `默认`），例如：\n"
-                f"`/tw set {acct} {tweet_type} 开启` 或 `/tw set {acct} {tweet_type} 关闭` 或 `/tw set {acct} {tweet_type} 默认`"
+                f"⚠️ 请指定有效的开关状态（`直接推送` / `推送` / `不推送` / `默认`），例如：\n"
+                f"`/tw set {acct} {tweet_type} 直接推送` 或 `/tw set {acct} {tweet_type} 不推送` 或 `/tw set {acct} {tweet_type} 默认`"
             )
             return
 
-        ui_val_str = "默认" if is_reset_default else ("推送" if tri_val else "不推送")
         target_keys = ["retweet", "reply", "text", "image"] if t_key == "all" else [t_key]
 
         # 1. 更新本群 rule["account_type_overrides"]（支持本群对多个不同订阅账号分别保存独立开关）
@@ -4007,11 +4230,12 @@ class TwitterRssPlugin(Star):
             if is_reset_default:
                 acct_ov.pop(tk, None)
             else:
-                acct_ov[tk] = bool(tri_val)
+                acct_ov[tk] = str(parsed_mode)
         if not acct_ov:
             overrides_map.pop(acct.lower(), None)
 
         # 2. 同步更新本群子类面板 rule["account_switches"]，与 WebUI 群聊卡片内的单账号开关子类保持一致
+        mode_to_ui = {"direct": "直接推送", "push": "推送", "skip": "不推送"}
         sw = rule.get("account_switches")
         if not isinstance(sw, dict):
             sw = {
@@ -4021,24 +4245,23 @@ class TwitterRssPlugin(Star):
                 "push_text": "默认",
                 "push_image": "默认",
             }
-        sw["account"] = acct
         curr_ov = overrides_map.get(acct.lower(), {})
+        summary = self._format_override_summary(curr_ov)
+        sw["account"] = f"🟠 {acct} [{summary}]" if summary else f"⚪ {acct}"
         for k_short, k_cfg in cfg_field_map.items():
-            if k_short in curr_ov:
-                sw[k_cfg] = "推送" if curr_ov[k_short] else "不推送"
-            else:
-                sw[k_cfg] = "默认"
+            sw[k_cfg] = mode_to_ui.get(curr_ov.get(k_short, ""), "默认")
         rule["account_switches"] = sw
         self._save_plugin_config()
 
         pol = self._get_account_type_policy(acct, rule)
         srcs = pol.get("sources", {})
+        modes = pol.get("modes", {})
         yield event.plain_result(
             f"✅ 已更新账号 @{acct} 在本群【{rule.get('group_name')}】的推文类型开关！\n"
-            f"• 转贴 (retweet): {'✅ 推送' if pol['retweet'] else '🚫 不推送'} （{srcs['retweet']}）\n"
-            f"• 回复 (reply): {'✅ 推送' if pol['reply'] else '🚫 不推送'} （{srcs['reply']}）\n"
-            f"• 纯文字 (text): {'✅ 推送' if pol['text'] else '🚫 不推送'} （{srcs['text']}）\n"
-            f"• 图片 (image): {'✅ 推送' if pol['image'] else '🚫 不推送'} （{srcs['image']}）"
+            f"• 转贴 (retweet): {mode_desc.get(modes.get('retweet', 'skip'))} （{srcs['retweet']}）\n"
+            f"• 回复 (reply): {mode_desc.get(modes.get('reply', 'skip'))} （{srcs['reply']}）\n"
+            f"• 纯文字 (text): {mode_desc.get(modes.get('text', 'push'))} （{srcs['text']}）\n"
+            f"• 图片 (image): {mode_desc.get(modes.get('image', 'push'))} （{srcs['image']}）"
         )
 
     @filter.permission_type(filter.PermissionType.ADMIN)
