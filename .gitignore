@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+.env
+img_cache/
+state.json
+history_tweets.json

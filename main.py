@@ -445,6 +445,7 @@ class TwitterRssPlugin(Star):
 
         # 自动将旧版全局配置平滑迁移到按群聊分类的 group_subscriptions 中
         self._migrate_legacy_config()
+        self._sync_subscribed_accounts_to_schema()
 
         self.http_client: httpx.AsyncClient | None = None
         self._not_found_accounts: set[str] = set()
@@ -453,7 +454,15 @@ class TwitterRssPlugin(Star):
         self._poll_task: asyncio.Task | None = None
         self._digest_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        self._http_reinit_lock = asyncio.Lock()
         self._started = False
+
+        # 确保在 WebUI 保存配置或热重载重新实例化插件时，即使未再次触发 on_astrbot_loaded 也能自动启动后台轮询与日志输出
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._ensure_started())
+        except RuntimeError:
+            pass
 
     def _migrate_legacy_config(self):
         """如果旧配置中有全局 twitter_accounts 或 push_targets，且 group_subscriptions 为空，则自动迁移"""
@@ -547,8 +556,11 @@ class TwitterRssPlugin(Star):
         await self._init_http_client()
         self._poll_task = asyncio.create_task(self._poll_loop())
         self._digest_task = asyncio.create_task(self._digest_loop())
+        rules = self._get_group_rules()
+        total_accts = sum(len(self._get_rule_accounts(r)) for r in rules)
+        interval_min = max(2, int(self.config.get("poll_interval_minutes", 15) or 15))
         logger.info(
-            f"[TwitterRSS] 插件已启动，当前已配置分群规则数: {len(self._get_group_rules())}"
+            f"[TwitterRSS] 插件后台服务已启动 | 分群规则数: {len(rules)} 个 | 累计订阅账号: {total_accts} 个 | 轮询间隔: {interval_min} 分钟"
         )
 
     async def _init_http_client(self):
@@ -568,10 +580,31 @@ class TwitterRssPlugin(Star):
         self.http_client = httpx.AsyncClient(
             headers=headers,
             proxy=proxy,
-            timeout=httpx.Timeout(14.0, connect=7.0),
+            timeout=httpx.Timeout(14.0, connect=7.0, pool=3.0),
             limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
             follow_redirects=True,
         )
+
+    async def _http_get_with_recovery(self, url: str) -> httpx.Response:
+        """GET with one client reset when the connection pool is exhausted."""
+        if not self.http_client or self.http_client.is_closed:
+            await self._init_http_client()
+
+        client = self.http_client
+        try:
+            return await client.get(url)
+        except httpx.PoolTimeout:
+            # A PoolTimeout is local to this AsyncClient: the request has not
+            # reached the upstream yet. Recreating the client releases stale
+            # connections and lets the next source/account continue.
+            async with self._http_reinit_lock:
+                if self.http_client is client:
+                    await self._init_http_client()
+                client = self.http_client
+            logger.warning(
+                f"[TwitterRSS] HTTP 连接池耗尽，已重建客户端并重试: {url}"
+            )
+            return await client.get(url)
 
     async def terminate(self):
         self._started = False
@@ -844,12 +877,159 @@ class TwitterRssPlugin(Star):
                 self.config.save_config()
             except Exception as e:
                 logger.warning(f"[TwitterRSS] 保存插件配置失败: {e}")
+        self._sync_subscribed_accounts_to_schema()
+
+    def _ingest_account_switches_from_rules(self) -> bool:
+        """
+        将各群 group_rule['account_switches'] (WebUI 子类面板) 中选择的账号与开关同步持久化到
+        group_rule['account_type_overrides'] 中，使一个群可以对多个不同订阅账号分别保存独立开关。
+        """
+        dirty = False
+        key_map = {
+            "retweet": "push_retweet",
+            "reply": "push_reply",
+            "text": "push_text",
+            "image": "push_image",
+        }
+        for r in self._get_group_rules():
+            sw = r.get("account_switches")
+            if not isinstance(sw, dict):
+                continue
+            overrides_map = r.setdefault("account_type_overrides", {})
+
+            # 1. 读取顶层当前选中的 account 及其四项开关
+            sel_acct = str(sw.get("account") or "").strip().lstrip("@")
+            if sel_acct:
+                acct_lower = sel_acct.lower()
+                acct_ov = overrides_map.get(acct_lower, {})
+                if not isinstance(acct_ov, dict):
+                    acct_ov = {}
+                any_custom = False
+                new_ov: dict[str, bool] = {}
+                for k_short, k_cfg in key_map.items():
+                    tri = self._parse_tri_state(sw.get(k_cfg))
+                    if tri is not None:
+                        new_ov[k_short] = tri
+                        any_custom = True
+                if any_custom:
+                    if acct_ov != new_ov:
+                        overrides_map[acct_lower] = new_ov
+                        dirty = True
+                elif acct_lower in overrides_map and all(
+                    str(sw.get(k_cfg) or "默认").strip() in ("默认", "默认(跟随全局)", "default")
+                    for k_cfg in key_map.values()
+                ):
+                    overrides_map.pop(acct_lower, None)
+                    dirty = True
+
+            # 2. 读取动态生成的已配置账号子项 (ov_<account>)
+            for sub_key, sub_val in list(sw.items()):
+                if not sub_key.startswith("ov_") or not isinstance(sub_val, dict):
+                    continue
+                sub_acct = sub_key[3:].strip().lstrip("@").lower()
+                if not sub_acct:
+                    continue
+                new_ov2: dict[str, bool] = {}
+                for k_short, k_cfg in key_map.items():
+                    tri = self._parse_tri_state(sub_val.get(k_cfg))
+                    if tri is not None:
+                        new_ov2[k_short] = tri
+                if new_ov2:
+                    if overrides_map.get(sub_acct) != new_ov2:
+                        overrides_map[sub_acct] = new_ov2
+                        dirty = True
+                elif sub_acct in overrides_map:
+                    overrides_map.pop(sub_acct, None)
+                    dirty = True
+
+        return dirty
+
+    def _sync_subscribed_accounts_to_schema(self):
+        """
+        将已订阅的推特账号自动同步写入 group_rule.items.account_switches.items.account 的下拉选项 (options)，
+        使其作为【群聊独立订阅与标签配置】的子类（与本群订阅的推特账号列表并列显示）且可直接下拉选择账号。
+        """
+        try:
+            self._ingest_account_switches_from_rules()
+
+            all_accts: list[str] = []
+            for r in self._get_group_rules():
+                for a in self._get_rule_accounts(r):
+                    if a and a not in all_accts:
+                        all_accts.append(a)
+
+            def _apply_options_to_schema_dict(s_dict: dict[str, Any]) -> bool:
+                changed_flag = False
+                try:
+                    sw_items = (
+                        s_dict.get("group_subscriptions", {})
+                        .get("templates", {})
+                        .get("group_rule", {})
+                        .get("items", {})
+                        .get("account_switches", {})
+                        .get("items", {})
+                    )
+                    acct_item = sw_items.get("account") if isinstance(sw_items, dict) else None
+                    if isinstance(acct_item, dict):
+                        if acct_item.get("options") != all_accts:
+                            acct_item["options"] = list(all_accts)
+                            acct_item["default"] = all_accts[0] if all_accts else ""
+                            changed_flag = True
+                except Exception:
+                    pass
+                return changed_flag
+
+            # 1. 更新内存中的 config.schema 及 AstrBot StarMetadata.config_schema（实时生效无需重启）
+            mem_schema = getattr(self.config, "schema", None)
+            if isinstance(mem_schema, dict):
+                _apply_options_to_schema_dict(mem_schema)
+
+            ctx_obj = getattr(self, "context", None)
+            if ctx_obj is not None and hasattr(ctx_obj, "get_all_stars"):
+                try:
+                    for star_meta in ctx_obj.get_all_stars() or []:
+                        if getattr(star_meta, "name", "") == "astrbot_plugin_twitter_rss":
+                            cs = getattr(star_meta, "config_schema", None)
+                            if isinstance(cs, dict):
+                                _apply_options_to_schema_dict(cs)
+                except Exception:
+                    pass
+
+            # 2. 更新插件目录下的 _conf_schema.json 文件
+            schema_file = pathlib.Path(__file__).resolve().parent / "_conf_schema.json"
+            if schema_file.exists():
+                disk_schema = json.loads(schema_file.read_text(encoding="utf-8"))
+                if _apply_options_to_schema_dict(disk_schema):
+                    schema_file.write_text(
+                        json.dumps(disk_schema, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+        except Exception as e:
+            logger.debug(f"[TwitterRSS] 同步已订阅账号至下拉选项跳过: {e}")
 
     def _get_group_rules(self) -> list[dict[str, Any]]:
         raw = self.config.get("group_subscriptions", [])
         if not isinstance(raw, list):
             return []
-        return [r for r in raw if isinstance(r, dict)]
+        return [
+            r
+            for r in raw
+            if isinstance(r, dict) and r.get("__template_key", "group_rule") == "group_rule"
+        ]
+
+    def _get_account_rule_cards(self) -> list[dict[str, Any]]:
+        """获取在 group_subscriptions 中添加的所有【单账号独立推送开关 (account_rule)】卡片"""
+        raw = self.config.get("group_subscriptions", [])
+        cards: list[dict[str, Any]] = []
+        if isinstance(raw, list):
+            for r in raw:
+                if isinstance(r, dict) and r.get("__template_key") == "account_rule":
+                    cards.append(r)
+                elif isinstance(r, dict) and isinstance(r.get("account_rules"), list):
+                    for sub_r in r["account_rules"]:
+                        if isinstance(sub_r, dict):
+                            cards.append(sub_r)
+        return cards
 
     def _resolve_target_umo(self, target_umo: str) -> str:
         """将纯数字群号自动解析为完整 unified_msg_origin"""
@@ -915,6 +1095,7 @@ class TwitterRssPlugin(Star):
             "group_name": f"群聊 {gid}" if gid else f"会话 {umo.split(':')[-1]}",
             "target_umo": umo,
             "twitter_accounts": [],
+            "account_switches": {"account": "", "push_retweet": "默认", "push_reply": "默认", "push_text": "默认", "push_image": "默认"},
             "enable_vision_tag_filter": True,
             "must_include_image_tags": ["二次元"],
             "any_include_image_tags": ["插画", "美少女", "萝莉", "立绘", "动漫角色"],
@@ -1058,7 +1239,7 @@ class TwitterRssPlugin(Star):
 
         try:
             check_url = f"https://api.fxtwitter.com/{username}"
-            resp = await self.http_client.get(check_url)
+            resp = await self._http_get_with_recovery(check_url)
             if resp.status_code == 404:
                 return True
             if resp.status_code == 200:
@@ -1156,7 +1337,7 @@ class TwitterRssPlugin(Star):
                 await asyncio.sleep(1.5)
 
             try:
-                resp = await self.http_client.get(url)
+                resp = await self._http_get_with_recovery(url)
                 final_url = str(resp.url)
                 if "google.com/404" in final_url or "x.com/i/flow/login" in final_url:
                     errors.append(f"{url} -> 重定向至无效页面 ({final_url})")
@@ -1168,7 +1349,7 @@ class TwitterRssPlugin(Star):
                     wait_sec = min(8.0, max(2.0, retry_after))
                     logger.info(f"[TwitterRSS] 源 {url} 触发 429 限流，退避等待 {wait_sec:.1f}s 后重试...")
                     await asyncio.sleep(wait_sec)
-                    resp = await self.http_client.get(url)
+                    resp = await self._http_get_with_recovery(url)
 
                 if resp.status_code == 404:
                     if any(
@@ -1211,6 +1392,9 @@ class TwitterRssPlugin(Star):
                     )
 
                 if tweets:
+                    logger.info(
+                        f"[TwitterRSS] 账号 @{acct_clean} 抓取成功: 从 {url} 解析到 {len(tweets)} 条推文"
+                    )
                     return tweets
                 errors.append(f"{url} -> 解析到 0 条推文")
             except httpx.TimeoutException as e:
@@ -1249,7 +1433,9 @@ class TwitterRssPlugin(Star):
             await self._init_http_client()
 
         try:
-            resp = await self.http_client.get(f"https://api.fxtwitter.com/{uname}")
+            resp = await self._http_get_with_recovery(
+                f"https://api.fxtwitter.com/{uname}"
+            )
             if resp.status_code == 200:
                 data = resp.json()
                 user_obj = data.get("user")
@@ -1271,6 +1457,83 @@ class TwitterRssPlugin(Star):
 
         return {}
 
+    @staticmethod
+    def _extract_media_from_fx_dict(media: Any) -> tuple[list[str], list[str], bool]:
+        """
+        从 FxTwitter 的 media 字典或列表中提取:
+        - images: 图片与视频/GIF封面快照 (.jpg/.png) URL 列表（对 video/gif 优先取 thumbnail_url 快照！）
+        - video_urls: 原始视频 (.mp4) URL 列表
+        - has_video: 是否包含视频或动图视频流
+        """
+        images: list[str] = []
+        video_urls: list[str] = []
+        has_video = False
+
+        def _add_img(u: Any):
+            s = str(u or "").strip()
+            if s and not s.lower().endswith((".mp4", ".m3u8", ".webm")) and "video.twimg.com" not in s.lower():
+                if s not in images:
+                    images.append(s)
+
+        def _add_vid(u: Any):
+            nonlocal has_video
+            s = str(u or "").strip()
+            if s:
+                has_video = True
+                if s not in video_urls:
+                    video_urls.append(s)
+
+        if isinstance(media, dict):
+            for p in media.get("photos") or []:
+                if isinstance(p, dict):
+                    _add_img(p.get("url") or p.get("media_url_https"))
+            for v in media.get("videos") or []:
+                if isinstance(v, dict):
+                    has_video = True
+                    _add_img(
+                        v.get("thumbnail_url")
+                        or v.get("poster")
+                        or v.get("preview_image_url")
+                    )
+                    _add_vid(v.get("url"))
+            for m in media.get("all") or []:
+                if not isinstance(m, dict):
+                    continue
+                mtype = str(m.get("type") or "").lower()
+                if mtype in ("photo", "image"):
+                    _add_img(m.get("url") or m.get("thumbnail_url"))
+                elif mtype in ("video", "gif", "animated_gif"):
+                    has_video = True
+                    # 关键：对视频和动图必须优先取 thumbnail_url 快照图片，绝不能把 .mp4 url 当成图片！
+                    _add_img(
+                        m.get("thumbnail_url")
+                        or m.get("poster")
+                        or m.get("preview_image_url")
+                    )
+                    _add_vid(m.get("url"))
+        elif isinstance(media, list):
+            for m in media:
+                if isinstance(m, dict):
+                    mtype = str(m.get("type") or "").lower()
+                    if mtype in ("video", "gif", "animated_gif") or str(m.get("url") or "").lower().endswith(".mp4"):
+                        has_video = True
+                        _add_img(
+                            m.get("thumbnail_url")
+                            or m.get("poster")
+                            or m.get("preview_image_url")
+                            or m.get("media_url_https")
+                        )
+                        _add_vid(m.get("url"))
+                    else:
+                        _add_img(m.get("url") or m.get("media_url_https") or m.get("thumbnail_url"))
+                elif isinstance(m, str):
+                    if m.lower().endswith((".mp4", ".m3u8")) or "video.twimg.com" in m.lower():
+                        _add_vid(m)
+                    else:
+                        _add_img(m)
+
+        return images, video_urls, has_video
+
     async def _fetch_single_status_cached(
         self, target_user: str, status_id: str
     ) -> dict[str, Any]:
@@ -1286,7 +1549,7 @@ class TwitterRssPlugin(Star):
 
         try:
             url = f"https://api.fxtwitter.com/{target_user}/status/{status_id}"
-            resp = await self.http_client.get(url)
+            resp = await self._http_get_with_recovery(url)
             if resp.status_code == 200:
                 data = resp.json()
                 tw = data.get("tweet") or data.get("status")
@@ -1300,24 +1563,15 @@ class TwitterRssPlugin(Star):
                         or ""
                     ).strip()
                     q_text = str(tw.get("text") or tw.get("full_text") or "").strip()
-                    q_imgs: list[str] = []
-                    media = tw.get("media")
-                    if isinstance(media, dict):
-                        for p in media.get("photos") or []:
-                            if isinstance(p, dict) and p.get("url"):
-                                q_imgs.append(str(p["url"]).strip())
-                        if not q_imgs:
-                            for m in media.get("all") or []:
-                                if isinstance(m, dict) and m.get("type") in ("photo", "image", "gif"):
-                                    u = m.get("url") or m.get("thumbnail_url")
-                                    if u:
-                                        q_imgs.append(str(u).strip())
+                    q_imgs, q_vids, q_has_vid = self._extract_media_from_fx_dict(tw.get("media"))
                     res = {
                         "username": q_uname,
                         "author_name": q_name,
                         "avatar_url": q_avatar,
                         "text": q_text,
                         "images": q_imgs,
+                        "video_urls": q_vids,
+                        "has_video": q_has_vid,
                     }
                     self._status_detail_cache[skey] = res
                     return res
@@ -1517,30 +1771,16 @@ class TwitterRssPlugin(Star):
                 or (f"https://x.com/{item_username}/status/{tid}" if tid else "")
             ).strip()
 
-            images: list[str] = []
-            media = st.get("media")
-            if isinstance(media, dict):
-                for p in media.get("photos") or []:
-                    if isinstance(p, dict) and p.get("url"):
-                        images.append(str(p["url"]).strip())
-                if not images:
-                    for m in media.get("all") or []:
-                        if isinstance(m, dict) and m.get("type") in ("photo", "image", "gif"):
-                            u = m.get("url") or m.get("thumbnail_url")
-                            if u:
-                                images.append(str(u).strip())
-            elif isinstance(media, list):
-                for m in media:
-                    if isinstance(m, dict):
-                        u = m.get("url") or m.get("media_url_https")
-                        if u:
-                            images.append(str(u).strip())
-                    elif isinstance(m, str):
-                        images.append(m.strip())
-
+            images, video_urls, has_video = self._extract_media_from_fx_dict(st.get("media"))
             for u in st.get("mediaURLs") or []:
-                if isinstance(u, str) and u not in images:
-                    images.append(u.strip())
+                if isinstance(u, str):
+                    u_clean = u.strip()
+                    if u_clean.lower().endswith((".mp4", ".m3u8")) or "video.twimg.com" in u_clean.lower():
+                        has_video = True
+                        if u_clean not in video_urls:
+                            video_urls.append(u_clean)
+                    elif u_clean not in images:
+                        images.append(u_clean)
 
             quote_obj = st.get("quote") if isinstance(st.get("quote"), dict) else None
             rt_analysis = self._analyze_retweet_and_quote(
@@ -1578,6 +1818,8 @@ class TwitterRssPlugin(Star):
                     "title": rt_analysis["clean_text"][:60],
                     "text": rt_analysis["clean_text"],
                     "images": images,
+                    "video_urls": video_urls,
+                    "has_video": has_video,
                     "link": link,
                     "timestamp": ts,
                     "pub_date": pub_str,
@@ -1665,7 +1907,7 @@ class TwitterRssPlugin(Star):
                 if u_href not in embedded_status_urls:
                     embedded_status_urls.append(u_href)
 
-            images = self._extract_images(el, raw_html)
+            images, video_urls, has_video = self._extract_images_and_videos(el, raw_html)
             clean_text = self._clean_html_to_text(raw_html)
             if not clean_text and title:
                 clean_text = self._clean_html_to_text(title)
@@ -1697,6 +1939,8 @@ class TwitterRssPlugin(Star):
                     "title": title,
                     "text": rt_analysis["clean_text"],
                     "images": images,
+                    "video_urls": video_urls,
+                    "has_video": has_video,
                     "link": link,
                     "timestamp": ts,
                     "pub_date": pub_str,
@@ -1721,34 +1965,98 @@ class TwitterRssPlugin(Star):
         val = el.findtext(ns_path) or el.findtext(tag_path)
         return (val or "").strip()
 
-    @staticmethod
-    def _extract_images(item_el: ET.Element, raw_html: str) -> list[str]:
-        urls: list[str] = []
+    @classmethod
+    def _extract_images_and_videos(
+        cls, item_el: ET.Element, raw_html: str
+    ) -> tuple[list[str], list[str], bool]:
+        """
+        从 RSS XML 条目中同时提取:
+        - image_urls: 静态图片及 <video poster="..."> 视频封面快照 URL
+        - video_urls: .mp4 视频流 URL
+        - has_video: 是否包含视频
+        """
+        img_urls: list[str] = []
+        vid_urls: list[str] = []
+        has_video = False
+
+        # 1. 提取 <img src="...">
         for match in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', raw_html, flags=re.I):
             u = html.unescape(match.group(1)).strip()
             if u and not u.startswith("data:") and "emoji" not in u.lower():
-                urls.append(u)
+                if u.lower().endswith((".mp4", ".m3u8")) or "video.twimg.com" in u.lower():
+                    has_video = True
+                    vid_urls.append(u)
+                else:
+                    img_urls.append(u)
 
+        # 2. 提取 <video poster="..."> 视频封面快照与 <video src="..."> / <source src="...">
+        for match in re.finditer(r'<video[^>]+poster=["\']([^"\']+)["\']', raw_html, flags=re.I):
+            has_video = True
+            poster_u = html.unescape(match.group(1)).strip()
+            if poster_u and not poster_u.startswith("data:"):
+                img_urls.append(poster_u)
+
+        for match in re.finditer(r'<(?:video|source)[^>]+src=["\']([^"\']+)["\']', raw_html, flags=re.I):
+            has_video = True
+            v_u = html.unescape(match.group(1)).strip()
+            if v_u:
+                vid_urls.append(v_u)
+
+        # 3. 扫描 raw_html 中可能内嵌的推特视频缩略图域名 (ext_tw_video_thumb / tweet_video_thumb / amplify_video_thumb)
+        for match in re.finditer(
+            r'https?://pbs\.twimg\.com/(?:ext_tw_video_thumb|tweet_video_thumb|amplify_video_thumb)/[^\s"\'<>]+',
+            raw_html,
+            flags=re.I,
+        ):
+            has_video = True
+            thumb_u = html.unescape(match.group(0)).strip()
+            if thumb_u:
+                img_urls.append(thumb_u)
+
+        # 4. 检查 XML 节点 (<enclosure>, <media:content>, <media:thumbnail>)
         for child in item_el.iter():
             tag_lower = child.tag.lower()
-            if tag_lower.endswith("enclosure") or tag_lower.endswith("content") or tag_lower.endswith("thumbnail"):
-                u = child.attrib.get("url", "").strip()
+            if tag_lower.endswith(("enclosure", "content", "thumbnail")):
+                u = html.unescape(child.attrib.get("url", "").strip())
                 mtype = child.attrib.get("type", "").lower()
                 medium = child.attrib.get("medium", "").lower()
-                if u and (
+                if not u:
+                    continue
+                if (
+                    "video" in mtype
+                    or medium == "video"
+                    or u.lower().endswith((".mp4", ".m3u8", ".webm"))
+                    or "video.twimg.com" in u.lower()
+                ):
+                    has_video = True
+                    vid_urls.append(u)
+                elif (
                     "image" in mtype
                     or medium == "image"
-                    or any(ext in u.lower() for ext in (".jpg", ".jpeg", ".png", ".webp", "format=jpg", "format=png", "pbs.twimg.com/media"))
+                    or tag_lower.endswith("thumbnail")
+                    or any(
+                        ext in u.lower()
+                        for ext in (
+                            ".jpg",
+                            ".jpeg",
+                            ".png",
+                            ".webp",
+                            "format=jpg",
+                            "format=png",
+                            "pbs.twimg.com/",
+                        )
+                    )
                 ):
-                    urls.append(html.unescape(u))
+                    img_urls.append(u)
 
-        seen: set[str] = set()
-        deduped: list[str] = []
-        for u in urls:
-            if u not in seen:
-                seen.add(u)
-                deduped.append(u)
-        return deduped
+        dedup_imgs = list(dict.fromkeys(img_urls))
+        dedup_vids = list(dict.fromkeys(vid_urls))
+        return dedup_imgs, dedup_vids, has_video
+
+    @classmethod
+    def _extract_images(cls, item_el: ET.Element, raw_html: str) -> list[str]:
+        imgs, _, _ = cls._extract_images_and_videos(item_el, raw_html)
+        return imgs
 
     @staticmethod
     def _clean_html_to_text(raw_html: str) -> str:
@@ -1854,6 +2162,109 @@ class TwitterRssPlugin(Star):
         except Exception:
             return None
 
+    @staticmethod
+    def _extract_frame_from_mp4_bytes_sync(
+        mp4_bytes: bytes, out_stem: pathlib.Path
+    ) -> tuple[pathlib.Path, str] | None:
+        """
+        当仅有 .mp4 视频流而无现成封面 URL 时，使用本地 ffmpeg 或 OpenCV (cv2) 从视频流前部提取高清快照帧，
+        并统一转换为标准 8-bit RGB JPEG。
+        """
+        if not mp4_bytes or len(mp4_bytes) < 512:
+            return None
+        tmp_mp4 = out_stem.with_suffix(".tmp.mp4")
+        tmp_jpg = out_stem.with_suffix(".frame.jpg")
+        try:
+            tmp_mp4.write_bytes(mp4_bytes)
+            frame_bytes: bytes | None = None
+
+            # 方式 A: 若系统安装了 ffmpeg，优先用 ffmpeg 截取第 0.5 秒或首帧
+            ffmpeg_bin = shutil.which("ffmpeg")
+            if ffmpeg_bin:
+                import subprocess
+                for seek_t in ("00:00:00.500", "00:00:00.000"):
+                    subprocess.run(
+                        [
+                            ffmpeg_bin,
+                            "-y",
+                            "-ss",
+                            seek_t,
+                            "-i",
+                            str(tmp_mp4),
+                            "-frames:v",
+                            "1",
+                            "-q:v",
+                            "2",
+                            str(tmp_jpg),
+                        ],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=8,
+                    )
+                    if tmp_jpg.exists() and tmp_jpg.stat().st_size > 128:
+                        frame_bytes = tmp_jpg.read_bytes()
+                        break
+
+            # 方式 B: 若环境装有 opencv-python (cv2)，使用 VideoCapture 抽帧
+            if not frame_bytes:
+                try:
+                    import cv2  # type: ignore
+                    cap = cv2.VideoCapture(str(tmp_mp4))
+                    ok, frame = cap.read()
+                    cap.release()
+                    if ok and frame is not None:
+                        ok_enc, buf = cv2.imencode(".jpg", frame)
+                        if ok_enc:
+                            frame_bytes = bytes(buf)
+                except Exception:
+                    pass
+
+            if frame_bytes:
+                return TwitterRssPlugin._normalize_image_bytes_sync(frame_bytes, out_stem)
+        except Exception:
+            pass
+        finally:
+            tmp_mp4.unlink(missing_ok=True)
+            tmp_jpg.unlink(missing_ok=True)
+        return None
+
+    async def _download_video_snapshot_cached(
+        self, video_url: str
+    ) -> tuple[str | None, str | None]:
+        """从 .mp4 视频 URL 抓取前 3MB 数据并提取视频帧快照图片"""
+        if not video_url:
+            return None, None
+        if not self.http_client or self.http_client.is_closed:
+            await self._init_http_client()
+
+        url_hash = hashlib.md5(f"vid_snap::{video_url}".encode("utf-8")).hexdigest()
+        out_stem = self.image_cache_dir / url_hash
+        existing = [
+            p
+            for p in self.image_cache_dir.glob(f"{url_hash}.*")
+            if p.suffix.lower() in (".jpg", ".jpeg", ".png")
+        ]
+        if existing:
+            local_path = existing[0]
+            data_uri = await asyncio.to_thread(self._file_to_data_uri, local_path)
+            return str(local_path), data_uri
+
+        try:
+            # 仅请求前 3MB 字节即可包含 MP4 moov + 首帧关键帧，避免下载整个大视频
+            resp = await self.http_client.get(
+                video_url, headers={"Range": "bytes=0-3145728"}
+            )
+            if resp.status_code not in (200, 206):
+                return None, None
+            norm_res = await asyncio.to_thread(
+                self._extract_frame_from_mp4_bytes_sync, resp.content, out_stem
+            )
+            if norm_res:
+                return str(norm_res[0]), norm_res[1]
+        except Exception as e:
+            logger.debug(f"[TwitterRSS] 视频流抽帧回退跳过 ({video_url}): {e}")
+        return None, None
+
     async def _download_image_cached(self, url: str) -> tuple[str | None, str | None]:
         if not url:
             return None, None
@@ -1887,7 +2298,7 @@ class TwitterRssPlugin(Star):
                 pass
 
         try:
-            resp = await self.http_client.get(fetch_url)
+            resp = await self._http_get_with_recovery(fetch_url)
             resp.raise_for_status()
             content_bytes = resp.content
             norm_res = await asyncio.to_thread(
@@ -1908,25 +2319,178 @@ class TwitterRssPlugin(Star):
         b64 = base64.b64encode(path.read_bytes()).decode("ascii")
         return f"data:{mime};base64,{b64}"
 
+    @staticmethod
+    def _parse_tri_state(val: Any) -> bool | None:
+        """解析三态开关配置：'推送'/True -> True；'不推送'/False -> False；'默认(跟随全局)'/None/'' -> None"""
+        if val is None:
+            return None
+        if isinstance(val, bool):
+            return val
+        s = str(val).strip().lower()
+        if not s or s in ("默认", "默认(跟随全局)", "跟随全局", "default", "inherit", "auto", "reset"):
+            return None
+        if s in ("推送", "开启", "开", "是", "允许", "true", "on", "yes", "1"):
+            return True
+        if s in ("不推送", "跳过", "关闭", "关", "否", "禁止", "false", "off", "no", "0"):
+            return False
+        return None
+
+    def _get_global_type_defaults(self, group_rule: dict[str, Any] | None = None) -> dict[str, bool]:
+        """
+        获取全局默认的 4 类推文推送开关：
+        - retweet (转贴): 默认由 default_push_retweet 或 (not skip_retweets) 决定
+        - reply (回复): 默认由 default_push_reply 或 (not skip_replies) 决定
+        - text (纯文字): 默认由 default_push_text 决定（默认 True）
+        - image (图片): 默认由 default_push_image 决定（默认 True）
+        """
+        if "default_push_retweet" in self.config:
+            def_rt = bool(self.config.get("default_push_retweet", False))
+        else:
+            skip_rt = bool(
+                group_rule.get("skip_retweets", self.config.get("skip_retweets", True))
+                if isinstance(group_rule, dict) and "skip_retweets" in group_rule
+                else self.config.get("skip_retweets", True)
+            )
+            def_rt = not skip_rt
+
+        if "default_push_reply" in self.config:
+            def_rep = bool(self.config.get("default_push_reply", False))
+        else:
+            def_rep = not bool(self.config.get("skip_replies", True))
+
+        def_text = bool(self.config.get("default_push_text", True))
+        def_image = bool(self.config.get("default_push_image", True))
+
+        return {
+            "retweet": def_rt,
+            "reply": def_rep,
+            "text": def_text,
+            "image": def_image,
+        }
+
+    def _get_account_type_policy(
+        self, account: str, group_rule: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """
+        获取指定订阅账号在当前群聊下的 4 类推文（转贴/回复/纯文字/图片）推送策略：
+        优先读取本群卡片内的 `account_rules` 单账号开关，未单独配置的项自动回退使用全局默认设置。
+        """
+        defaults = self._get_global_type_defaults(group_rule)
+        policy: dict[str, Any] = {
+            "retweet": defaults["retweet"],
+            "reply": defaults["reply"],
+            "text": defaults["text"],
+            "image": defaults["image"],
+            "sources": {
+                "retweet": "全局默认",
+                "reply": "全局默认",
+                "text": "全局默认",
+                "image": "全局默认",
+            },
+        }
+        acct_lower = (account or "").strip().lstrip("@").lower()
+        if not acct_lower:
+            return policy
+
+        key_map = {
+            "retweet": "push_retweet",
+            "reply": "push_reply",
+            "text": "push_text",
+            "image": "push_image",
+        }
+
+        if isinstance(group_rule, dict):
+            # 1. 先读取本群持久化的多账号独立开关字典 account_type_overrides
+            overrides_map = group_rule.get("account_type_overrides")
+            if isinstance(overrides_map, dict):
+                acct_ov = overrides_map.get(acct_lower)
+                if isinstance(acct_ov, dict):
+                    for k_short in ("retweet", "reply", "text", "image"):
+                        tri = self._parse_tri_state(acct_ov.get(k_short))
+                        if tri is not None:
+                            policy[k_short] = tri
+                            policy["sources"][k_short] = "单独设置"
+
+            # 2. 读取本群配置卡片内的子类 account_switches (type: object，与 twitter_accounts 并列)
+            sw = group_rule.get("account_switches")
+            if isinstance(sw, dict):
+                sw_acct = str(sw.get("account") or "").strip().lstrip("@").lower()
+                if sw_acct == acct_lower:
+                    for k_short, k_cfg in key_map.items():
+                        tri = self._parse_tri_state(sw.get(k_cfg))
+                        if tri is not None:
+                            policy[k_short] = tri
+                            policy["sources"][k_short] = "单独设置"
+                sub_sw = sw.get(f"ov_{acct_lower}") or sw.get(f"ov_{account.strip().lstrip('@')}")
+                if isinstance(sub_sw, dict):
+                    for k_short, k_cfg in key_map.items():
+                        tri = self._parse_tri_state(sub_sw.get(k_cfg))
+                        if tri is not None:
+                            policy[k_short] = tri
+                            policy["sources"][k_short] = "单独设置"
+
+        return policy
+
     def _should_skip_tweet(
-        self, tweet: dict[str, Any], group_rule: dict[str, Any] | None = None
+        self,
+        tweet: dict[str, Any],
+        group_rule: dict[str, Any] | None = None,
+        media_prepared: bool = False,
     ) -> bool:
-        """检查推文是否应因【纯转发 (RT)】或【回复】被直接跳过"""
-        skip_rt = bool(
-            group_rule.get("skip_retweets", self.config.get("skip_retweets", True))
-            if isinstance(group_rule, dict) and "skip_retweets" in group_rule
-            else self.config.get("skip_retweets", True)
-        )
+        """
+        根据订阅账号的独立四类推文开关（未单独配置则跟随全局默认）判断是否跳过该推文：
+        支持控制：转贴 (retweet)、回复 (reply)、纯文字 (text)、图片 (image)
+        """
+        acct = str(
+            tweet.get("retweeter_username")
+            or tweet.get("username")
+            or ""
+        ).strip().lstrip("@")
+        policy = self._get_account_type_policy(acct, group_rule)
+
         text = str(tweet.get("text") or "").strip()
-        if skip_rt and (
+        is_rt = bool(
             tweet.get("is_retweet")
             or re.match(r"^(?:RT|R\s+to|Retweet)\s+@", text, flags=re.I)
-        ):
+        )
+        is_rep = bool(
+            tweet.get("is_reply")
+            or re.match(r"^(?:Re\s+@|@)", text, flags=re.I)
+        )
+
+        # 1. 转贴 (Retweet) 开关判断
+        if is_rt and not policy["retweet"]:
             return True
-        if self.config.get("skip_replies", True) and re.match(
-            r"^(?:Re\s+@|@)", text, flags=re.I
-        ):
+
+        # 2. 回复 (Reply) 开关判断
+        if is_rep and not policy["reply"]:
             return True
+
+        # 3. 图片 (Image) 与 纯文字 (Text) 开关判断
+        has_images = (
+            bool(tweet.get("images"))
+            or bool(tweet.get("local_images"))
+            or bool(tweet.get("has_video"))
+            or bool(tweet.get("video_urls"))
+        )
+        if not has_images and isinstance(tweet.get("quote_info"), dict):
+            has_images = bool(tweet["quote_info"].get("display_images"))
+        if not has_images and isinstance(tweet.get("quote_data"), dict):
+            qd_media = tweet["quote_data"].get("media")
+            if isinstance(qd_media, dict) and (qd_media.get("photos") or qd_media.get("all")):
+                has_images = True
+
+        # 若是尚未拉取原推详情的转贴（且该账号允许推送转贴），留到 _prepare_tweet_media 展开原推后再判断是否有图
+        if is_rt and not media_prepared and not has_images and tweet.get("rt_status_id"):
+            return False
+
+        if has_images:
+            if not policy["image"]:
+                return True
+        else:
+            if not policy["text"]:
+                return True
+
         return False
 
     async def _prepare_tweet_media(self, tweet: dict[str, Any]) -> dict[str, Any]:
@@ -1998,10 +2562,8 @@ class TwitterRssPlugin(Star):
                 qd = prepared["quote_data"]
                 qa = qd.get("author") or qd.get("user") or {}
                 q_imgs: list[str] = []
-                if isinstance(qd.get("media"), dict):
-                    for p in qd["media"].get("photos") or []:
-                        if isinstance(p, dict) and p.get("url"):
-                            q_imgs.append(str(p["url"]).strip())
+                if qd.get("media"):
+                    q_imgs, _, _ = self._extract_media_from_fx_dict(qd.get("media"))
                 q_detail = {
                     "username": str(qa.get("screen_name") or q_user or "x").strip(),
                     "author_name": str(qa.get("name") or qa.get("screen_name") or q_user or "X").strip(),
@@ -2032,14 +2594,47 @@ class TwitterRssPlugin(Star):
 
         orig_body, orig_tags = self._split_tweet_body_and_tags(prepared.get("text", ""))
 
+        # 5. 若推文包含视频 (has_video / video_urls)，或 RSS 仅给出了视频而缺少快照图片 URL：
+        #    优先通过 api.fxtwitter.com 单帖详情接口拉取官方高清视频封面快照 (thumbnail_url)！
+        if not prepared.get("images") and (
+            prepared.get("has_video") or prepared.get("video_urls")
+        ):
+            sid = ""
+            m_link = _STATUS_URL_RE.search(str(prepared.get("link") or ""))
+            if m_link:
+                sid = m_link.group(2)
+            elif str(prepared.get("id") or "").isdigit():
+                sid = str(prepared["id"])
+            target_u = str(prepared.get("username") or sub_username).strip().lstrip("@")
+            if target_u and sid:
+                st_detail = await self._fetch_single_status_cached(target_u, sid)
+                if st_detail.get("images"):
+                    prepared["images"] = list(st_detail["images"])
+                    prepared["has_video"] = True
+                    logger.info(
+                        f"[TwitterRSS] 已为视频推文 {sid} (@{target_u}) 获取官方视频快照封面: {prepared['images'][0]}"
+                    )
+
         local_image_paths: list[str] = []
         display_image_srcs: list[str] = []
         for img_url in prepared.get("images", []):
-            local_path, data_uri = await self._download_image_cached(img_url)
+            if str(img_url).lower().endswith((".mp4", ".m3u8")) or "video.twimg.com" in str(img_url).lower():
+                local_path, data_uri = await self._download_video_snapshot_cached(img_url)
+            else:
+                local_path, data_uri = await self._download_image_cached(img_url)
             if local_path:
                 local_image_paths.append(local_path)
             if data_uri:
                 display_image_srcs.append(data_uri)
+
+        # 若仍无快照且有 .mp4 视频链接，尝试本地抽帧提取视频快照
+        if not local_image_paths and prepared.get("video_urls"):
+            for v_url in prepared.get("video_urls", [])[:2]:
+                local_path, data_uri = await self._download_video_snapshot_cached(v_url)
+                if local_path:
+                    local_image_paths.append(local_path)
+                if data_uri:
+                    display_image_srcs.append(data_uri)
 
         # 若引用推文自身带图而外层推文无图，也将引用推文的图片纳入原图发送与视觉评估列表
         if not local_image_paths and quote_info and q_detail.get("images"):
@@ -2182,7 +2777,8 @@ class TwitterRssPlugin(Star):
             "- 判断图片中命中了【其他任意标签】里的哪些标签，原样放入 matched_any_tags 数组。\n"
             "- 判断图片中命中了【禁止包含(排除)标签】里的哪些标签，原样放入 matched_exclude_tags 数组。\n"
             "- 若【原推文正文】非空，请将其直接翻译为自然流畅的中文放入 translated_body（只输出纯翻译译文，严禁添加“疑似…”、“画师…”、“意思是…”等任何解释说明；若原推文正文为空字符串，则 translated_body 必须为空字符串 \"\"）。\n"
-            "- 若【原推文标签列表】非空，请将每个标签翻译为中文标签放入 translated_tags 数组（每个元素以 # 开头，如 [\"#古明地恋\", \"#东方Project\"]；若原推文无标签，则可结合画面补充 1~3 个核心中文 #标签 放入 translated_tags）。\n\n"
+            "- 【人名尽量不翻译】：翻译正文与标签时，遇到人名（包括画师名、歌手/唱见名、VTuber/虚拟主播名、创作者昵称、声优名、角色名，尤其是日文假名/英文名如 ちょこ、ななひら、桃寝ちのい、名取さな、somunia 等）请直接保留原文，严禁强行音译或意译成生硬的中文！\n"
+            "- 若【原推文标签列表】非空，请将每个标签翻译为中文标签放入 translated_tags 数组（每个元素以 # 开头，涉及人名/专有创作者名的标签保留原文；若原推文无标签，则可结合画面补充 1~3 个核心中文 #标签 放入 translated_tags）。\n\n"
             "请严格按以下 JSON 格式返回：\n"
             "{\n"
             '  "matched_must_tags": [],\n'
@@ -2282,11 +2878,12 @@ class TwitterRssPlugin(Star):
             f"作者: {prepared_tweet['author_name']} (@{prepared_tweet['username']})\n"
             f"原推文正文 (不含标签): {json.dumps(orig_body, ensure_ascii=False)}\n"
             f"原推文标签列表: {json.dumps(orig_tags, ensure_ascii=False)}\n\n"
+            "【翻译注意】遇到人名（如画师、歌手、VTuber、创作者昵称、角色名，尤其是日文假名/英文名如 ちょこ、ななひら、桃寝ちのい、名取さな 等）请尽量保留原文不翻译，不要强行音译或意译成生硬的中文。\n\n"
             "请严格返回如下 JSON 格式：\n"
             "{\n"
             '  "worth_pushing": true,\n'
-            '  "translated_body": "若原推文正文非空，直接输出正文的纯中文译文（严禁添加疑似/解释说明）；若原推文正文为空，必须输出空字符串 \"\"",\n'
-            '  "translated_tags": ["#标签中文译文1", "#标签中文译文2"],\n'
+            '  "translated_body": "若原推文正文非空，直接输出正文的纯中文译文（人名保留原文，严禁添加疑似/解释说明）；若原推文正文为空，必须输出空字符串 \"\"",\n'
+            '  "translated_tags": ["#标签译文1(人名保留原文)", "#标签译文2"],\n'
             '  "reason": "简短原因"\n'
             "}"
         )
@@ -2322,9 +2919,9 @@ class TwitterRssPlugin(Star):
         self, prepared_tweet: dict[str, Any], group_rule: dict[str, Any]
     ) -> tuple[bool, dict[str, Any]]:
         """针对单个群聊的独立规则评估推文是否值得推送"""
-        if self._should_skip_tweet(prepared_tweet, group_rule):
+        if self._should_skip_tweet(prepared_tweet, group_rule, media_prepared=True):
             logger.info(
-                f"[TwitterRSS] 推文 {prepared_tweet.get('id')} (@{prepared_tweet.get('username')}) 为纯转推或回复，已按配置自动跳过。"
+                f"[TwitterRSS] 推文 {prepared_tweet.get('id')} (@{prepared_tweet.get('username')}) 命中推文类型过滤开关（转贴/回复/纯文字/图片），已按配置自动跳过。"
             )
             return False, prepared_tweet
 
@@ -2347,6 +2944,9 @@ class TwitterRssPlugin(Star):
                 )
                 return False, enriched
 
+            logger.info(
+                f"[TwitterRSS] 群[{group_rule.get('group_name')}] 推文 {enriched['id']} (@{enriched['username']}) 通过视觉标签筛选"
+            )
             if bypass_text:
                 return True, enriched
 
@@ -2362,6 +2962,9 @@ class TwitterRssPlugin(Star):
                     f"[TwitterRSS] 群[{group_rule.get('group_name')}] 推文 {enriched['id']} (@{enriched['username']}) 未通过文本筛选: {t_res.get('reason')}"
                 )
                 return False, enriched
+            logger.info(
+                f"[TwitterRSS] 群[{group_rule.get('group_name')}] 推文 {enriched['id']} (@{enriched['username']}) 通过文本价值筛选"
+            )
 
         return True, enriched
 
@@ -2435,6 +3038,11 @@ class TwitterRssPlugin(Star):
         except TypeError:
             res = await self.html_render(template_str, render_data, options=options)
 
+        if res and str(res).startswith(("http://", "https://")):
+            local_p, _ = await self._download_image_cached(str(res))
+            if local_p:
+                res = local_p
+
         if res and not str(res).startswith(("http://", "https://")):
             await asyncio.to_thread(self._trim_rendered_image_sync, str(res))
         return res
@@ -2476,6 +3084,9 @@ class TwitterRssPlugin(Star):
             "pub_date": enriched_tweet.get("pub_date", ""),
         }
 
+        logger.info(
+            f"[TwitterRSS] 正在为群聊 {umo} 渲染推文卡片: @{enriched_tweet.get('username')} ({enriched_tweet.get('id')})"
+        )
         rendered_card_path = await self._render_html_to_image(TWEET_CARD_TMPL, render_payload)
         raw_images = enriched_tweet.get("local_images", [])
         send_mode = str(self.config.get("push_send_mode", "separate_messages") or "separate_messages")
@@ -2562,6 +3173,9 @@ class TwitterRssPlugin(Star):
                         )
                     except Exception as img_err:
                         logger.warning(f"[TwitterRSS] 发送单张原图 ({raw_img}) 失败，已跳过该原图: {img_err}")
+            logger.info(
+                f"[TwitterRSS] 已向群聊 {umo} 推送推文 @{enriched_tweet.get('username')} ({enriched_tweet.get('id')})，附带原图 {len(raw_images)} 张"
+            )
         except Exception as e:
             logger.error(f"[TwitterRSS] 向群聊会话 {umo} 推送推文失败: {e}")
 
@@ -2573,7 +3187,11 @@ class TwitterRssPlugin(Star):
             rules = [target_rule] if target_rule is not None else self._get_group_rules()
             stats = {"fetched": 0, "new": 0, "pushed": 0}
             if not rules:
+                logger.info("[TwitterRSS] 当前尚未配置任何分群订阅规则 (group_subscriptions)，跳过本轮轮询。")
                 return stats
+            logger.info(
+                f"[TwitterRSS] {'手动触发' if manual else '定时任务'}开始检查新推文（共 {len(rules)} 个群聊规则）..."
+            )
 
             seen_map: dict[str, list[str]] = self.state.setdefault("seen_ids", {})
             init_keys: list[str] = self.state.setdefault("initialized_keys", [])
@@ -2644,6 +3262,9 @@ class TwitterRssPlugin(Star):
                             acct_seen.add(nt["id"])
                         seen_map[state_key] = list(acct_seen)[-300:]
                         init_keys.append(state_key)
+                        logger.info(
+                            f"[TwitterRSS] 群[{rule.get('group_name')}] 账号 @{account} 首次初始化，已将 {len(new_tweets)} 条历史推文标记为已读（不重复刷屏推送）"
+                        )
                         continue
 
                     if is_first_init:
@@ -2675,6 +3296,9 @@ class TwitterRssPlugin(Star):
 
             await self._save_state()
             await self._save_history()
+            logger.info(
+                f"[TwitterRSS] 推文检查完成：累计拉取 {stats['fetched']} 条，发现新推文 {stats['new']} 条，筛选通过并推送 {stats['pushed']} 条。"
+            )
             return stats
 
     async def test_push_for_group(
@@ -2825,8 +3449,9 @@ class TwitterRssPlugin(Star):
                 f"- **宁缺毋滥、实事求是**：在不超过 {max_items} 条上限的前提下，你认为有几条真正算新闻，就输出几条（例如若只有 5 条算新闻就只输出 5 条；若有 14 条算新闻就输出 14 条，不要为了凑满上限而塞入水帖，也不要固定停在 8 条）。\n\n"
                 "【撰写铁律（必须严格执行）】\n"
                 "1. 新闻简讯口吻：title（8~18字）与 summary（20~50字，1~2句话）均采用客观、洗练的新闻报道口吻，直接陈述作者发布了什么主题的插画、设计或动态，有话则长、无话则短。\n"
-                "2. 严禁出现废话或提及未知信息：绝对禁止输出“无法判断…”、“未进一步说明…”、“未透露…”、“素材未包含…”、“暂不清楚…”、“未提及…”、“无法核验…”等任何关于信息缺失的表述！只陈述推文已有的明确信息。\n"
-                "3. 严禁使用任何 Emoji 表情符号。\n\n"
+                "2. 人名尽量保留原文不翻译：在 title 和 summary 中提及画师、歌手、VTuber、创作者昵称或角色名（尤其是日文假名/汉字/英文名，如 ちょこ、ななひら、桃寝ちのい、名取さな、somunia、中村さんそ 等）时，请直接保留原名，严禁将其强行音译或意译为生硬中文（例如不要把 ななひら 译成“奈奈平”，不要把 名取さな 译成“名取纱那”，不要把 桃寝ちのい 简写或改译）！\n"
+                "3. 严禁出现废话或提及未知信息：绝对禁止输出“无法判断…”、“未进一步说明…”、“未透露…”、“素材未包含…”、“暂不清楚…”、“未提及…”、“无法核验…”等任何关于信息缺失的表述！只陈述推文已有的明确信息。\n"
+                "4. 严禁使用任何 Emoji 表情符号。\n\n"
                 f"【过去24小时推文素材列表（共 {len(recent_slice)} 条）】\n" + "\n".join(candidates_lines) + "\n\n"
                 "请严格返回如下 JSON 格式：\n"
                 "{\n"
@@ -3223,21 +3848,41 @@ class TwitterRssPlugin(Star):
             f"当前排除标签: {', '.join(tags) if tags else '无'}"
         )
 
+    def _format_account_with_overrides(self, account: str, rule: dict[str, Any]) -> str:
+        pol = self._get_account_type_policy(account, rule)
+        srcs = pol.get("sources", {})
+        label_map = {"retweet": "转贴", "reply": "回复", "text": "纯文字", "image": "图片"}
+        custom_parts: list[str] = []
+        for k, cn in label_map.items():
+            if srcs.get(k) == "单独设置":
+                custom_parts.append(f"{cn}:{'开' if pol[k] else '关'}")
+        if custom_parts:
+            return f"{account}[{','.join(custom_parts)}]"
+        return account
+
     @tw.command("list")
     async def tw_list(self, event: AstrMessageEvent):
-        """查看当前群聊的独立订阅与标签过滤配置"""
+        """查看当前群聊的独立订阅、各账号独立类型开关与标签过滤配置"""
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
         accounts = self._get_rule_accounts(rule)
+        formatted_accounts = [self._format_account_with_overrides(a, rule) for a in accounts]
         must_tags = self._clean_str_list(rule.get("must_include_image_tags", []))
         any_tags = self._clean_str_list(rule.get("any_include_image_tags", []))
         exc_tags = self._clean_str_list(rule.get("exclude_image_tags", []))
         test_count = max(1, int(self.config.get("test_push_tweet_count", 3) or 3))
         all_rules = self._get_group_rules()
+        g_defs = self._get_global_type_defaults(rule)
 
         msg = (
             f"📡 【当前群聊独立配置：{rule.get('group_name')}】\n"
             f"• 会话 ID: {rule.get('target_umo')}\n"
-            f"• 本群订阅账号 ({len(accounts)}): {', '.join(accounts) if accounts else '暂无 (发送 /tw add <账号> 添加)'}\n"
+            f"• 本群订阅账号 ({len(accounts)}): {', '.join(formatted_accounts) if formatted_accounts else '暂无 (发送 /tw add <账号> 添加)'}\n"
+            f"• 全局默认推文类型开关: "
+            f"转贴={'推送' if g_defs['retweet'] else '跳过'} | "
+            f"回复={'推送' if g_defs['reply'] else '跳过'} | "
+            f"纯文字={'推送' if g_defs['text'] else '跳过'} | "
+            f"图片={'推送' if g_defs['image'] else '跳过'}\n"
+            f"  (发送 `/tw set <账号> <转贴|回复|纯文字|图片> <开启|关闭|默认>` 可为单个账号独立设置)\n"
             f"• 本群视觉标签过滤: {'开启' if rule.get('enable_vision_tag_filter', True) else '关闭'}\n"
             f"  - 必须包含标签 (全部命中): {', '.join(must_tags) if must_tags else '不限'}\n"
             f"  - 其他任意标签 (命中1条即可): {', '.join(any_tags) if any_tags else '不限'}\n"
@@ -3248,6 +3893,153 @@ class TwitterRssPlugin(Star):
             f"• 测试推送条数: 每账号过去 {test_count} 条 | 全局已配置群聊总数: {len(all_rules)} 个"
         )
         yield event.plain_result(msg)
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @tw.command("set")
+    async def tw_set(
+        self,
+        event: AstrMessageEvent,
+        account: str = "",
+        tweet_type: str = "",
+        state_str: str = "",
+    ):
+        """
+        为单个订阅账号独立设置是否推送【转贴 / 回复 / 纯文字 / 图片】四类推文（未单独配置则跟随全局默认）：
+        用法示例：
+        - /tw set ProjMoonStudio             (查看该账号当前的四类推文推送设置)
+        - /tw set ProjMoonStudio 转贴 开启    (单独允许推送该账号的转贴)
+        - /tw set ProjMoonStudio 纯文字 关闭  (单独关闭该账号的纯文字推文，仅看带图推文)
+        - /tw set ProjMoonStudio 回复 开启    (单独允许推送该账号的回复推文)
+        - /tw set ProjMoonStudio 图片 开启    (单独开启该账号的图片推文推送)
+        - /tw set ProjMoonStudio 全部 默认    (清除该账号的单独设置，恢复跟随全局默认设置)
+        """
+        if not self._has_admin_permission(event):
+            yield event.plain_result("⚠️ 权限不足：该指令仅限群聊管理员或机器人管理员使用。")
+            return
+
+        acct = account.strip().lstrip("@")
+        if not acct:
+            yield event.plain_result(
+                "请提供要查看或设置的推特账号名，例如：\n"
+                "• 查看账号设置：`/tw set ProjMoonStudio`\n"
+                "• 单独开启转贴：`/tw set ProjMoonStudio 转贴 开启`\n"
+                "• 单独关闭纯文字：`/tw set ProjMoonStudio 纯文字 关闭`\n"
+                "• 恢复全局默认：`/tw set ProjMoonStudio 全部 默认`"
+            )
+            return
+
+        rule = self._find_or_create_group_rule(event, create_if_missing=True)
+        umo = self._resolve_target_umo(rule.get("target_umo", "")) or event.unified_msg_origin
+
+        type_alias_map = {
+            "转贴": "retweet",
+            "转推": "retweet",
+            "转发": "retweet",
+            "rt": "retweet",
+            "retweet": "retweet",
+            "回复": "reply",
+            "评论": "reply",
+            "reply": "reply",
+            "纯文字": "text",
+            "文字": "text",
+            "文本": "text",
+            "text": "text",
+            "图片": "image",
+            "带图": "image",
+            "插画": "image",
+            "image": "image",
+            "img": "image",
+            "全部": "all",
+            "所有": "all",
+            "all": "all",
+            "reset": "all",
+        }
+        cn_label = {"retweet": "转贴", "reply": "回复", "text": "纯文字", "image": "图片"}
+        cfg_field_map = {
+            "retweet": "push_retweet",
+            "reply": "push_reply",
+            "text": "push_text",
+            "image": "push_image",
+        }
+
+        if not tweet_type.strip():
+            pol = self._get_account_type_policy(acct, rule)
+            srcs = pol.get("sources", {})
+            yield event.plain_result(
+                f"⚙️ 账号 @{acct} 在本群【{rule.get('group_name')}】的推文类型推送策略：\n"
+                f"• 转贴 (retweet): {'✅ 推送' if pol['retweet'] else '🚫 不推送'} （{srcs['retweet']}）\n"
+                f"• 回复 (reply): {'✅ 推送' if pol['reply'] else '🚫 不推送'} （{srcs['reply']}）\n"
+                f"• 纯文字 (text): {'✅ 推送' if pol['text'] else '🚫 不推送'} （{srcs['text']}）\n"
+                f"• 图片 (image): {'✅ 推送' if pol['image'] else '🚫 不推送'} （{srcs['image']}）\n\n"
+                f"💡 修改示例：`/tw set {acct} <转贴|回复|纯文字|图片|全部> <开启|关闭|默认>`"
+            )
+            return
+
+        t_key = type_alias_map.get(tweet_type.strip().lower())
+        if not t_key:
+            yield event.plain_result(
+                f"⚠️ 未知的推文类型：{tweet_type}\n"
+                f"支持的类型：`转贴`、`回复`、`纯文字`、`图片`、`全部`"
+            )
+            return
+
+        if t_key == "all" and not state_str.strip():
+            state_str = "默认"
+
+        tri_val = self._parse_tri_state(state_str)
+        is_reset_default = state_str.strip().lower() in (
+            "默认", "默认(跟随全局)", "跟随全局", "default", "inherit", "auto", "reset"
+        )
+        if tri_val is None and not is_reset_default:
+            yield event.plain_result(
+                f"⚠️ 请指定有效的开关状态（`开启` / `关闭` / `默认`），例如：\n"
+                f"`/tw set {acct} {tweet_type} 开启` 或 `/tw set {acct} {tweet_type} 关闭` 或 `/tw set {acct} {tweet_type} 默认`"
+            )
+            return
+
+        ui_val_str = "默认" if is_reset_default else ("推送" if tri_val else "不推送")
+        target_keys = ["retweet", "reply", "text", "image"] if t_key == "all" else [t_key]
+
+        # 1. 更新本群 rule["account_type_overrides"]（支持本群对多个不同订阅账号分别保存独立开关）
+        overrides_map = rule.setdefault("account_type_overrides", {})
+        acct_ov = overrides_map.setdefault(acct.lower(), {})
+        for tk in target_keys:
+            if is_reset_default:
+                acct_ov.pop(tk, None)
+            else:
+                acct_ov[tk] = bool(tri_val)
+        if not acct_ov:
+            overrides_map.pop(acct.lower(), None)
+
+        # 2. 同步更新本群子类面板 rule["account_switches"]，与 WebUI 群聊卡片内的单账号开关子类保持一致
+        sw = rule.get("account_switches")
+        if not isinstance(sw, dict):
+            sw = {
+                "account": acct,
+                "push_retweet": "默认",
+                "push_reply": "默认",
+                "push_text": "默认",
+                "push_image": "默认",
+            }
+        sw["account"] = acct
+        curr_ov = overrides_map.get(acct.lower(), {})
+        for k_short, k_cfg in cfg_field_map.items():
+            if k_short in curr_ov:
+                sw[k_cfg] = "推送" if curr_ov[k_short] else "不推送"
+            else:
+                sw[k_cfg] = "默认"
+        rule["account_switches"] = sw
+        self._save_plugin_config()
+
+        pol = self._get_account_type_policy(acct, rule)
+        srcs = pol.get("sources", {})
+        yield event.plain_result(
+            f"✅ 已更新账号 @{acct} 在本群【{rule.get('group_name')}】的推文类型开关！\n"
+            f"• 转贴 (retweet): {'✅ 推送' if pol['retweet'] else '🚫 不推送'} （{srcs['retweet']}）\n"
+            f"• 回复 (reply): {'✅ 推送' if pol['reply'] else '🚫 不推送'} （{srcs['reply']}）\n"
+            f"• 纯文字 (text): {'✅ 推送' if pol['text'] else '🚫 不推送'} （{srcs['text']}）\n"
+            f"• 图片 (image): {'✅ 推送' if pol['image'] else '🚫 不推送'} （{srcs['image']}）"
+        )
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("check")
