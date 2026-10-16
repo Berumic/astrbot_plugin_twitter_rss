@@ -171,6 +171,21 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
+  .translation-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    color: #1d9bf0;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+  .translation-label svg {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+  }
   .trans-tags {
     margin-top: 4px;
     font-size: 16.5px;
@@ -322,8 +337,14 @@
     </div>
     {% endif %}
 
-    {% if translated_body or translated_tags %}
+    {% if (orig_body and translated_body) or translated_tags %}
     <div class="trans-section">
+      <div class="translation-label">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 5h12M9 3v2M5 5c.8 4 3.5 7.5 7 10M13 5c-.8 4-3.5 7.5-8 11M13 21l4.5-11L22 21M15 17h5" />
+        </svg>
+        <span>AI 翻译</span>
+      </div>
       {% if orig_body and translated_body %}
       <div class="trans-body">{{ translated_body }}</div>
       {% endif %}

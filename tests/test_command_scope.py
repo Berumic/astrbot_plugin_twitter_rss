@@ -11,6 +11,7 @@ import re
 import time
 from types import SimpleNamespace
 import unittest
+import httpx
 from unittest.mock import AsyncMock, Mock, patch
 
 
@@ -21,6 +22,10 @@ def load_plugin_methods():
         "_get_rule_accounts", "_get_rule_hashtags", "_tweet_identity", "_resolve_target_umo",
         "_record_event_umo", "_find_or_create_group_rule", "check_all_accounts",
         "test_push_for_group", "tw_test", "tw_check", "run_daily_digest", "_matches_rule_subscription",
+        "_validate_rendered_image_sync", "_render_html_to_image", "_http_get_with_recovery",
+        "_init_http_client", "_normalize_proxy_url", "_fetch_feed_response", "_feed_host",
+        "_feed_hosts", "_cool_down_feed",
+        "_digest_tick",
     }
     original = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "TwitterRssPlugin")
     methods = [n for n in original.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in wanted]
@@ -30,7 +35,7 @@ def load_plugin_methods():
     sections = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "CONFIG_SECTIONS" for t in n.targets))
     module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
                              ast.ClassDef(name="Plugin", bases=[], keywords=[], body=methods, decorator_list=[])], type_ignores=[])
-    namespace = dict(asyncio=asyncio, copy=copy, random=random, re=re,
+    namespace = dict(asyncio=asyncio, copy=copy, random=random, re=re, httpx=httpx,
                      time=time, datetime=datetime, pathlib=pathlib,
                      MACARON_PALETTES=[{}], DAILY_DIGEST_TMPL="digest-template",
                      _clean_digest_text=lambda text, **kwargs: text,
@@ -214,6 +219,31 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(data["items"]), 1)
                 self.assertEqual(p._archive_daily_digest.await_args.kwargs["render_data"], data)
                 self.assertEqual(p.context.send_message.await_args.args[0], self.rule["target_umo"])
+
+    async def test_scheduled_digest_freezes_window_and_saves_edition_before_render(self):
+        p = self.plugin
+        edition = datetime.datetime.now().replace(microsecond=0)
+        p.history_tweets = [
+            dict(id="before", username="alice", timestamp=edition.timestamp()-60, text="included"),
+            dict(id="after", username="alice", timestamp=edition.timestamp()+60, text="excluded"),
+        ]
+        p._call_llm = AsyncMock(return_value="result")
+        p._extract_json_dict = Mock(return_value={"items": [{"tweet_index": 0, "title": "news", "summary": "summary"}]})
+        p._archive_daily_digest = AsyncMock(return_value="archive.png")
+        async def render(*args):
+            # The exact edition is persisted even if rendering fails afterwards.
+            self.assertEqual(p._archive_daily_digest.await_count, 1)
+            self.assertEqual(p._archive_daily_digest.await_args.kwargs["digest_img_path"], "")
+            return "rendered.png"
+        p._render_html_to_image = AsyncMock(side_effect=render)
+        p._make_image_comp = Mock(side_effect=lambda path: path)
+        p.context = SimpleNamespace(send_message=AsyncMock())
+        ok, _ = await p.run_daily_digest(target_rule=self.rule, scheduled_at=edition)
+        self.assertTrue(ok)
+        data = p._render_html_to_image.await_args.args[1]
+        self.assertEqual(data["total_count"], 1)
+        self.assertEqual(data["scheduled_at"], edition.isoformat())
+        self.assertEqual(p._archive_daily_digest.await_count, 2)
 
 
 if __name__ == "__main__":

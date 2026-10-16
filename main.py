@@ -33,7 +33,7 @@ from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, StarTools, register
 
 # 直接内嵌最新 HTML 模板，确保在 AstrBot 热重载 main.py 时不会因 sys.modules 缓存旧的 templates.py 而导致样式不更新
-TWEET_CARD_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #0f172a;\n    -webkit-font-smoothing: antialiased;\n  }\n  .card {\n    width: 100%;\n    background: #ffffff;\n    padding: 28px 32px;\n  }\n  .retweet-banner {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    margin-bottom: 12px;\n    padding-left: 8px;\n    font-size: 13.5px;\n    font-weight: 700;\n    color: #059669;\n  }\n  .retweet-icon {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 20px;\n    height: 20px;\n    border-radius: 6px;\n    background: rgba(16, 185, 129, 0.12);\n    color: #059669;\n    font-size: 13px;\n    font-weight: 900;\n  }\n  .retweet-mini-avatar {\n    width: 20px;\n    height: 20px;\n    border-radius: 50%;\n    overflow: hidden;\n    background: #10b981;\n    flex-shrink: 0;\n    border: 1px solid #d1fae5;\n  }\n  .retweet-mini-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .header {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    margin-bottom: 16px;\n  }\n  .author-box {\n    display: flex;\n    align-items: center;\n    gap: 14px;\n  }\n  .avatar {\n    width: 52px;\n    height: 52px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 22px;\n    font-weight: 700;\n    overflow: hidden;\n    flex-shrink: 0;\n    border: 1px solid #e2e8f0;\n  }\n  .avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n  }\n  .author-meta {\n    display: flex;\n    flex-direction: column;\n    gap: 3px;\n  }\n  .author-name-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n  }\n  .author-name {\n    font-size: 19px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .verified-badge {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 18px;\n    height: 18px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 11px;\n    font-weight: 900;\n  }\n  .author-sub {\n    font-size: 14px;\n    color: #64748b;\n    font-weight: 500;\n  }\n  .brand-logo {\n    width: 34px;\n    height: 34px;\n    border-radius: 9px;\n    background: #0f172a;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 19px;\n    font-weight: 900;\n  }\n  .tweet-section {\n    margin-bottom: 12px;\n  }\n  .tweet-body {\n    font-size: 18px;\n    line-height: 1.65;\n    color: #0f172a;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .tweet-tags {\n    margin-top: 4px;\n    font-size: 17px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .trans-section {\n    margin-top: 8px;\n    margin-bottom: 14px;\n    padding-top: 10px;\n    border-top: 1px solid #f1f5f9;\n  }\n  .trans-body {\n    font-size: 16.5px;\n    line-height: 1.65;\n    color: #334155;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .trans-tags {\n    margin-top: 4px;\n    font-size: 16.5px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .media-grid {\n    display: grid;\n    gap: 10px;\n    margin-top: 12px;\n    border-radius: 16px;\n    overflow: hidden;\n  }\n  .media-grid.count-1 {\n    grid-template-columns: 1fr;\n  }\n  .media-grid.count-2, .media-grid.count-3, .media-grid.count-4 {\n    grid-template-columns: 1fr 1fr;\n  }\n  .media-item {\n    width: 100%;\n    overflow: hidden;\n    background: #f8fafc;\n    border-radius: 14px;\n    border: 1px solid #e2e8f0;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .media-grid.count-1 .media-item img {\n    width: 100%;\n    height: auto;\n    display: block;\n  }\n  .media-grid.count-2 .media-item img,\n  .media-grid.count-3 .media-item img,\n  .media-grid.count-4 .media-item img {\n    width: 100%;\n    height: 320px;\n    object-fit: cover;\n    display: block;\n  }\n  /* 引用转发 (Quote Tweet) 嵌套卡片样式 */\n  .quote-card {\n    margin-top: 14px;\n    border: 1.5px solid #cbd5e1;\n    border-radius: 16px;\n    background: #f8fafc;\n    padding: 16px 18px;\n    overflow: hidden;\n  }\n  .quote-header {\n    display: flex;\n    align-items: center;\n    gap: 9px;\n    margin-bottom: 8px;\n  }\n  .quote-avatar {\n    width: 26px;\n    height: 26px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 13px;\n    font-weight: 700;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    overflow: hidden;\n    flex-shrink: 0;\n  }\n  .quote-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .quote-author-name {\n    font-size: 15px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .quote-author-handle {\n    font-size: 13.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .quote-body {\n    font-size: 15.5px;\n    line-height: 1.58;\n    color: #1e293b;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .quote-tags {\n    margin-top: 4px;\n    font-size: 15px;\n    line-height: 1.55;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n</style>\n</head>\n<body>\n  <div class="card" id="tweet-card">\n    {% if is_retweet and retweeter_username %}\n    <div class="retweet-banner">\n      <span class="retweet-icon">↻</span>\n      {% if retweeter_avatar_src %}\n      <span class="retweet-mini-avatar">\n        <img src="{{ retweeter_avatar_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </span>\n      {% endif %}\n      <span>{{ retweeter_name }} (@{{ retweeter_username }}) 已转推</span>\n    </div>\n    {% endif %}\n\n    <div class="header">\n      <div class="author-box">\n        <div class="avatar">\n          {% if avatar_src %}\n          <img src="{{ avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ author_initial }}\';" />\n          {% else %}\n          {{ author_initial }}\n          {% endif %}\n        </div>\n        <div class="author-meta">\n          <div class="author-name-row">\n            <span class="author-name">{{ author_name }}</span>\n            <span class="verified-badge">✓</span>\n          </div>\n          <span class="author-sub">@{{ username }}{% if pub_date %} · {{ pub_date }}{% endif %}</span>\n        </div>\n      </div>\n      <div class="brand-logo">𝕏</div>\n    </div>\n\n    {% if orig_body or orig_tags %}\n    <div class="tweet-section">\n      {% if orig_body %}\n      <div class="tweet-body">{{ orig_body }}</div>\n      {% endif %}\n      {% if orig_tags %}\n      <div class="tweet-tags">{{ orig_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if translated_body or translated_tags %}\n    <div class="trans-section">\n      {% if orig_body and translated_body %}\n      <div class="trans-body">{{ translated_body }}</div>\n      {% endif %}\n      {% if translated_tags %}\n      <div class="trans-tags">{{ translated_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if vision_matched_tags %}\n    <div style="margin: 10px 0; padding: 10px 12px; background: #ecfdf5; border-radius: 10px; color: #065f46; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere;">\n      <span style="font-weight: 600;">视觉筛选命中：</span>\n      {% for tag in vision_matched_tags %}\n      <span style="display: inline-block; margin: 2px 4px; padding: 1px 8px; border: 1px solid #a7f3d0; border-radius: 12px;">{{ tag | e }}</span>\n      {% endfor %}\n    </div>\n    {% endif %}\n    {% if quote_info %}\n    <div class="quote-card">\n      <div class="quote-header">\n        <div class="quote-avatar">\n          {% if quote_info.avatar_src %}\n          <img src="{{ quote_info.avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ quote_info.author_initial }}\';" />\n          {% else %}\n          {{ quote_info.author_initial }}\n          {% endif %}\n        </div>\n        <span class="quote-author-name">{{ quote_info.author_name }}</span>\n        <span class="quote-author-handle">@{{ quote_info.username }}</span>\n      </div>\n      {% if quote_info.orig_body %}\n      <div class="quote-body">{{ quote_info.orig_body }}</div>\n      {% endif %}\n      {% if quote_info.orig_tags %}\n      <div class="quote-tags">{{ quote_info.orig_tags|join(\' \') }}</div>\n      {% endif %}\n      {% if quote_info.display_images %}\n      <div class="media-grid count-{{ quote_info.display_images|length if quote_info.display_images|length <= 4 else 4 }}">\n        {% for img_src in quote_info.display_images[:4] %}\n        <div class="media-item">\n          <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% endfor %}\n      </div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if display_images %}\n    <div class="media-grid count-{{ display_images|length if display_images|length <= 4 else 4 }}">\n      {% for img_src in display_images[:4] %}\n      <div class="media-item">\n        <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </div>\n      {% endfor %}\n    </div>\n    {% endif %}\n  </div>\n</body>\n</html>\n'
+TWEET_CARD_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #0f172a;\n    -webkit-font-smoothing: antialiased;\n  }\n  .card {\n    width: 100%;\n    background: #ffffff;\n    padding: 28px 32px;\n  }\n  .retweet-banner {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    margin-bottom: 12px;\n    padding-left: 8px;\n    font-size: 13.5px;\n    font-weight: 700;\n    color: #059669;\n  }\n  .retweet-icon {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 20px;\n    height: 20px;\n    border-radius: 6px;\n    background: rgba(16, 185, 129, 0.12);\n    color: #059669;\n    font-size: 13px;\n    font-weight: 900;\n  }\n  .retweet-mini-avatar {\n    width: 20px;\n    height: 20px;\n    border-radius: 50%;\n    overflow: hidden;\n    background: #10b981;\n    flex-shrink: 0;\n    border: 1px solid #d1fae5;\n  }\n  .retweet-mini-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .header {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    margin-bottom: 16px;\n  }\n  .author-box {\n    display: flex;\n    align-items: center;\n    gap: 14px;\n  }\n  .avatar {\n    width: 52px;\n    height: 52px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 22px;\n    font-weight: 700;\n    overflow: hidden;\n    flex-shrink: 0;\n    border: 1px solid #e2e8f0;\n  }\n  .avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n  }\n  .author-meta {\n    display: flex;\n    flex-direction: column;\n    gap: 3px;\n  }\n  .author-name-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n  }\n  .author-name {\n    font-size: 19px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .verified-badge {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 18px;\n    height: 18px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 11px;\n    font-weight: 900;\n  }\n  .author-sub {\n    font-size: 14px;\n    color: #64748b;\n    font-weight: 500;\n  }\n  .brand-logo {\n    width: 34px;\n    height: 34px;\n    border-radius: 9px;\n    background: #0f172a;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 19px;\n    font-weight: 900;\n  }\n  .tweet-section {\n    margin-bottom: 12px;\n  }\n  .tweet-body {\n    font-size: 18px;\n    line-height: 1.65;\n    color: #0f172a;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .tweet-tags {\n    margin-top: 4px;\n    font-size: 17px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .trans-section {\n    margin-top: 8px;\n    margin-bottom: 14px;\n    padding-top: 10px;\n    border-top: 1px solid #f1f5f9;\n  }\n  .trans-body {\n    font-size: 16.5px;\n    line-height: 1.65;\n    color: #334155;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .translation-label {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin-bottom: 6px;\n    color: #1d9bf0;\n    font-size: 14px;\n    font-weight: 500;\n    line-height: 20px;\n  }\n  .translation-label svg {\n    width: 17px;\n    height: 17px;\n    flex-shrink: 0;\n  }\n  .trans-tags {\n    margin-top: 4px;\n    font-size: 16.5px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .media-grid {\n    display: grid;\n    gap: 10px;\n    margin-top: 12px;\n    border-radius: 16px;\n    overflow: hidden;\n  }\n  .media-grid.count-1 {\n    grid-template-columns: 1fr;\n  }\n  .media-grid.count-2, .media-grid.count-3, .media-grid.count-4 {\n    grid-template-columns: 1fr 1fr;\n  }\n  .media-item {\n    width: 100%;\n    overflow: hidden;\n    background: #f8fafc;\n    border-radius: 14px;\n    border: 1px solid #e2e8f0;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .media-grid.count-1 .media-item img {\n    width: 100%;\n    height: auto;\n    display: block;\n  }\n  .media-grid.count-2 .media-item img,\n  .media-grid.count-3 .media-item img,\n  .media-grid.count-4 .media-item img {\n    width: 100%;\n    height: 320px;\n    object-fit: cover;\n    display: block;\n  }\n  /* 引用转发 (Quote Tweet) 嵌套卡片样式 */\n  .quote-card {\n    margin-top: 14px;\n    border: 1.5px solid #cbd5e1;\n    border-radius: 16px;\n    background: #f8fafc;\n    padding: 16px 18px;\n    overflow: hidden;\n  }\n  .quote-header {\n    display: flex;\n    align-items: center;\n    gap: 9px;\n    margin-bottom: 8px;\n  }\n  .quote-avatar {\n    width: 26px;\n    height: 26px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 13px;\n    font-weight: 700;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    overflow: hidden;\n    flex-shrink: 0;\n  }\n  .quote-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .quote-author-name {\n    font-size: 15px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .quote-author-handle {\n    font-size: 13.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .quote-body {\n    font-size: 15.5px;\n    line-height: 1.58;\n    color: #1e293b;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .quote-tags {\n    margin-top: 4px;\n    font-size: 15px;\n    line-height: 1.55;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n</style>\n</head>\n<body>\n  <div class="card" id="tweet-card">\n    {% if is_retweet and retweeter_username %}\n    <div class="retweet-banner">\n      <span class="retweet-icon">↻</span>\n      {% if retweeter_avatar_src %}\n      <span class="retweet-mini-avatar">\n        <img src="{{ retweeter_avatar_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </span>\n      {% endif %}\n      <span>{{ retweeter_name }} (@{{ retweeter_username }}) 已转推</span>\n    </div>\n    {% endif %}\n\n    <div class="header">\n      <div class="author-box">\n        <div class="avatar">\n          {% if avatar_src %}\n          <img src="{{ avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ author_initial }}\';" />\n          {% else %}\n          {{ author_initial }}\n          {% endif %}\n        </div>\n        <div class="author-meta">\n          <div class="author-name-row">\n            <span class="author-name">{{ author_name }}</span>\n            <span class="verified-badge">✓</span>\n          </div>\n          <span class="author-sub">@{{ username }}{% if pub_date %} · {{ pub_date }}{% endif %}</span>\n        </div>\n      </div>\n      <div class="brand-logo">𝕏</div>\n    </div>\n\n    {% if orig_body or orig_tags %}\n    <div class="tweet-section">\n      {% if orig_body %}\n      <div class="tweet-body">{{ orig_body }}</div>\n      {% endif %}\n      {% if orig_tags %}\n      <div class="tweet-tags">{{ orig_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if (orig_body and translated_body) or translated_tags %}\n    <div class="trans-section">\n      <div class="translation-label">\n        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">\n          <path d="M3 5h12M9 3v2M5 5c.8 4 3.5 7.5 7 10M13 5c-.8 4-3.5 7.5-8 11M13 21l4.5-11L22 21M15 17h5" />\n        </svg>\n        <span>AI 翻译</span>\n      </div>\n      {% if orig_body and translated_body %}\n      <div class="trans-body">{{ translated_body }}</div>\n      {% endif %}\n      {% if translated_tags %}\n      <div class="trans-tags">{{ translated_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if quote_info %}\n    <div class="quote-card">\n      <div class="quote-header">\n        <div class="quote-avatar">\n          {% if quote_info.avatar_src %}\n          <img src="{{ quote_info.avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ quote_info.author_initial }}\';" />\n          {% else %}\n          {{ quote_info.author_initial }}\n          {% endif %}\n        </div>\n        <span class="quote-author-name">{{ quote_info.author_name }}</span>\n        <span class="quote-author-handle">@{{ quote_info.username }}</span>\n      </div>\n      {% if quote_info.orig_body %}\n      <div class="quote-body">{{ quote_info.orig_body }}</div>\n      {% endif %}\n      {% if quote_info.orig_tags %}\n      <div class="quote-tags">{{ quote_info.orig_tags|join(\' \') }}</div>\n      {% endif %}\n      {% if quote_info.display_images %}\n      <div class="media-grid count-{{ quote_info.display_images|length if quote_info.display_images|length <= 4 else 4 }}">\n        {% for img_src in quote_info.display_images[:4] %}\n        <div class="media-item">\n          <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% endfor %}\n      </div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if display_images %}\n    <div class="media-grid count-{{ display_images|length if display_images|length <= 4 else 4 }}">\n      {% for img_src in display_images[:4] %}\n      <div class="media-item">\n        <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </div>\n      {% endfor %}\n    </div>\n    {% endif %}\n  </div>\n</body>\n</html>\n'
 
 DAILY_DIGEST_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #181e29;\n    -webkit-font-smoothing: antialiased;\n  }\n  .digest-page {\n    width: 100%;\n    background: linear-gradient(\n      180deg,\n      rgba(var(--theme-rgb, 254, 228, 238), 0.62) 0%,\n      rgba(var(--theme-mid-rgb, 255, 255, 255), 0.28) 50%,\n      rgba(var(--theme-end-rgb, 235, 228, 255), 0.58) 100%\n    );\n    padding: 34px 36px 38px 36px;\n    position: relative;\n    overflow: hidden;\n  }\n  .page-deco-circle {\n    position: absolute;\n    top: -90px;\n    right: -70px;\n    width: 260px;\n    height: 260px;\n    border-radius: 50%;\n    background: radial-gradient(\n      circle,\n      rgba(var(--theme-accent-rgb, 112, 72, 232), 0.10) 0%,\n      rgba(var(--theme-accent-rgb, 112, 72, 232), 0) 70%\n    );\n    pointer-events: none;\n    z-index: 0;\n  }\n  .digest-header {\n    position: relative;\n    z-index: 2;\n    display: flex;\n    align-items: flex-end;\n    justify-content: space-between;\n    gap: 20px;\n  }\n  .header-left {\n    display: flex;\n    align-items: center;\n    gap: 16px;\n  }\n  .header-accent-bar {\n    width: 8px;\n    height: 46px;\n    border-radius: 99px;\n    background: linear-gradient(\n      180deg,\n      var(--theme-accent, #d6336c) 0%,\n      var(--theme-mid-accent, var(--theme-accent, #d6336c)) 100%\n    );\n    box-shadow: 0 4px 14px rgba(var(--theme-accent-rgb, 214, 51, 108), 0.30);\n    flex-shrink: 0;\n  }\n  .header-title-wrap {\n    display: flex;\n    flex-direction: column;\n    gap: 4px;\n  }\n  .header-title {\n    font-size: 32px;\n    font-weight: 900;\n    color: #141923;\n    letter-spacing: 1.5px;\n    line-height: 1.1;\n  }\n  .header-sub {\n    font-size: 11px;\n    font-weight: 800;\n    letter-spacing: 2.4px;\n    text-transform: uppercase;\n    color: var(--theme-accent, #7048e8);\n    opacity: 0.88;\n  }\n  .header-right {\n    display: flex;\n    flex-direction: column;\n    align-items: flex-end;\n    gap: 7px;\n  }\n  .date-badge {\n    background: rgba(var(--theme-rgb, 236, 229, 255), 0.95);\n    color: var(--theme-accent, #7048e8);\n    border: 1px solid var(--theme-border, #d0bfff);\n    padding: 5px 14px;\n    border-radius: 99px;\n    font-size: 12.5px;\n    font-weight: 800;\n    letter-spacing: 0.8px;\n  }\n  .stats-row {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    font-size: 12px;\n    font-weight: 600;\n    color: #64748b;\n  }\n  .stats-row strong {\n    color: #1e293b;\n    font-weight: 800;\n  }\n  .stats-dot {\n    width: 4px;\n    height: 4px;\n    border-radius: 50%;\n    background: var(--theme-accent, #7048e8);\n    opacity: 0.45;\n  }\n  .header-divider {\n    position: relative;\n    z-index: 2;\n    height: 2.5px;\n    margin: 20px 0 24px 0;\n    border-radius: 99px;\n    background: linear-gradient(\n      90deg,\n      var(--theme-accent, #d6336c) 0%,\n      var(--theme-mid-accent, var(--theme-border, #f9b8d4)) 45%,\n      rgba(var(--theme-end-accent-rgb, var(--theme-accent-rgb, 214, 51, 108)), 0.22) 100%\n    );\n  }\n  .digest-list {\n    position: relative;\n    z-index: 2;\n    display: flex;\n    flex-direction: column;\n    gap: 18px;\n  }\n  .news-card {\n    position: relative;\n    width: 100%;\n    border-radius: 22px;\n    overflow: hidden;\n    background: linear-gradient(\n      90deg,\n      rgb(var(--card-rgb)) 0%,\n      rgb(var(--card-soft-rgb)) 100%\n    );\n    border: 1.5px solid var(--card-border);\n    box-shadow:\n      0 10px 26px -10px rgba(var(--accent-rgb), 0.15),\n      inset 0 1px 0 rgba(255, 255, 255, 0.75);\n    display: flex;\n    align-items: stretch;\n  }\n  .news-card.has-image {\n    min-height: 178px;\n  }\n  .news-card.no-image {\n    min-height: 136px;\n  }\n  .card-accent-strip {\n    width: 6px;\n    background: var(--accent);\n    flex-shrink: 0;\n    z-index: 3;\n  }\n  .card-body {\n    position: relative;\n    z-index: 3;\n    display: flex;\n    flex-direction: column;\n    justify-content: center;\n  }\n  .news-card.has-image .card-body {\n    width: 64%;\n    padding: 22px 18px 22px 22px;\n  }\n  .news-card.no-image .card-body {\n    width: 100%;\n    padding: 22px 28px 22px 22px;\n  }\n  .card-meta {\n    display: flex;\n    align-items: center;\n    flex-wrap: wrap;\n    gap: 8px;\n    margin-bottom: 9px;\n  }\n  .card-num {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    height: 22px;\n    padding: 0 9px;\n    border-radius: 99px;\n    background: var(--accent);\n    color: #ffffff;\n    font-size: 11.5px;\n    font-weight: 800;\n    letter-spacing: 0.6px;\n    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.25);\n  }\n  .card-cat {\n    display: inline-flex;\n    align-items: center;\n    height: 22px;\n    padding: 0 10px;\n    border-radius: 99px;\n    background: var(--tag-bg);\n    color: var(--accent);\n    border: 1px solid rgba(var(--accent-rgb), 0.24);\n    font-size: 11.5px;\n    font-weight: 700;\n    letter-spacing: 0.3px;\n  }\n  .card-author {\n    font-size: 12.5px;\n    font-weight: 700;\n    color: #334155;\n  }\n  .card-time {\n    font-size: 11.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .card-title {\n    font-size: 19px;\n    font-weight: 850;\n    color: #141923;\n    line-height: 1.38;\n    margin-bottom: 7px;\n    letter-spacing: 0.2px;\n  }\n  .card-summary {\n    font-size: 14.5px;\n    font-weight: 500;\n    color: #2d3748;\n    line-height: 1.66;\n    word-break: break-word;\n  }\n  /* 使用 CSS mask-image 控制图片自身的 Alpha 透明度，从右向左逐渐透明融入卡片马卡龙底色，绝不发白、绝无接缝 */\n  .card-artwork {\n    position: absolute;\n    top: 0;\n    right: 0;\n    bottom: 0;\n    width: 58%;\n    z-index: 1;\n    overflow: hidden;\n    -webkit-mask-image: linear-gradient(\n      90deg,\n      rgba(0, 0, 0, 0) 0%,\n      rgba(0, 0, 0, 0.04) 12%,\n      rgba(0, 0, 0, 0.18) 28%,\n      rgba(0, 0, 0, 0.48) 48%,\n      rgba(0, 0, 0, 0.80) 68%,\n      rgba(0, 0, 0, 0.96) 85%,\n      rgba(0, 0, 0, 1) 100%\n    );\n    mask-image: linear-gradient(\n      90deg,\n      rgba(0, 0, 0, 0) 0%,\n      rgba(0, 0, 0, 0.04) 12%,\n      rgba(0, 0, 0, 0.18) 28%,\n      rgba(0, 0, 0, 0.48) 48%,\n      rgba(0, 0, 0, 0.80) 68%,\n      rgba(0, 0, 0, 0.96) 85%,\n      rgba(0, 0, 0, 1) 100%\n    );\n  }\n  .card-artwork img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    object-position: center 20%;\n    display: block;\n  }\n  .card-watermark-num {\n    position: absolute;\n    right: 22px;\n    bottom: -10px;\n    font-size: 76px;\n    font-weight: 900;\n    line-height: 1;\n    letter-spacing: -2px;\n    color: rgba(var(--accent-rgb), 0.08);\n    pointer-events: none;\n    z-index: 1;\n    user-select: none;\n  }\n</style>\n</head>\n<body>\n  <div\n    class="digest-page"\n    style="\n      --theme-rgb: {{ theme.card_rgb }};\n      --theme-soft-rgb: {{ theme.card_soft_rgb }};\n      --theme-border: {{ theme.card_border }};\n      --theme-accent: {{ theme.accent }};\n      --theme-accent-rgb: {{ theme.accent_rgb }};\n      --theme-mid-rgb: {{ (theme_mid or theme).card_rgb }};\n      --theme-mid-accent: {{ (theme_mid or theme).accent }};\n      --theme-end-rgb: {{ (theme_end or theme).card_soft_rgb }};\n      --theme-end-accent-rgb: {{ (theme_end or theme).accent_rgb }};\n    "\n  >\n    <div class="page-deco-circle"></div>\n\n    <div class="digest-header">\n      <div class="header-left">\n        <div class="header-accent-bar"></div>\n        <div class="header-title-wrap">\n          <div class="header-title">今日要闻</div>\n          <div class="header-sub">DAILY CURATED BRIEFING</div>\n        </div>\n      </div>\n\n      <div class="header-right">\n        <div class="date-badge">{{ date_str }}</div>\n        <div class="stats-row">\n          <span>24H 收录 <strong>{{ total_count }}</strong></span>\n          <span class="stats-dot"></span>\n          <span>精选 <strong>{{ items|length }}</strong></span>\n          <span class="stats-dot"></span>\n          <span>订阅 <strong>{{ account_count }}</strong></span>\n        </div>\n      </div>\n    </div>\n\n    <div class="header-divider"></div>\n\n    <div class="digest-list">\n      {% for item in items %}\n      <div\n        class="news-card {% if item.thumb_src %}has-image{% else %}no-image{% endif %}"\n        style="\n          --card-rgb: {{ item.palette.card_rgb }};\n          --card-soft-rgb: {{ item.palette.card_soft_rgb }};\n          --card-border: {{ item.palette.card_border }};\n          --accent: {{ item.palette.accent }};\n          --accent-rgb: {{ item.palette.accent_rgb }};\n          --tag-bg: {{ item.palette.tag_bg }};\n        "\n      >\n        <div class="card-accent-strip"></div>\n\n        <div class="card-body">\n          <div class="card-meta">\n            <span class="card-num">{{ "%02d"|format(loop.index) }}</span>\n            <span class="card-cat">{{ item.category or "资讯速递" }}</span>\n            <span class="card-author">@{{ item.username }}{% if item.author_name and item.author_name != item.username %} · {{ item.author_name }}{% endif %}</span>\n            {% if item.pub_date %}\n            <span class="card-time">{{ item.pub_date }}</span>\n            {% endif %}\n          </div>\n          <div class="card-title">{{ item.title }}</div>\n          <div class="card-summary">{{ item.summary }}</div>\n        </div>\n\n        {% if item.thumb_src %}\n        <div class="card-artwork">\n          <img src="{{ item.thumb_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% else %}\n        <div class="card-watermark-num">{{ "%02d"|format(loop.index) }}</div>\n        {% endif %}\n      </div>\n      {% endfor %}\n    </div>\n  </div>\n</body>\n</html>\n'
 
@@ -627,8 +627,8 @@ class TwitterRssPlugin(Star):
             new_client = httpx.AsyncClient(
                 headers=headers,
                 proxy=proxy,
-                timeout=httpx.Timeout(14.0, connect=7.0, pool=3.0),
-                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+                timeout=httpx.Timeout(14.0, connect=7.0, pool=5.0),
+                limits=httpx.Limits(max_keepalive_connections=16, max_connections=32),
                 follow_redirects=True,
             )
         except ImportError:
@@ -637,23 +637,47 @@ class TwitterRssPlugin(Star):
             raise ValueError("无法创建 HTTP 客户端，请检查代理地址的协议、主机及端口格式") from None
         old_client = self.http_client
         self.http_client = new_client
+        if not hasattr(self, "_http_users"):
+            self._http_users = {}
+            self._http_retired = set()
         if old_client and not old_client.is_closed:
-            await old_client.aclose()
+            if self._http_users.get(old_client, 0):
+                self._http_retired.add(old_client)
+            else:
+                await old_client.aclose()
 
-    async def _http_get_with_recovery(self, url: str) -> httpx.Response:
-        """GET with one client reset when the connection pool is exhausted."""
-        if not self.http_client or self.http_client.is_closed:
-            await self._init_http_client()
-
-        client = self.http_client
-        try:
-            return await client.get(url)
-        except httpx.PoolTimeout:
-            # Do not close a shared client while concurrent requests are using it.
-            async with self._http_reinit_lock:
-                await asyncio.sleep(0.3)
-                logger.warning(f"[TwitterRSS] HTTP 连接池繁忙，等待后重试: {url}")
-                return await self.http_client.get(url)
+    async def _http_get_with_recovery(self, url: str, **kwargs) -> httpx.Response:
+        """Bound request lifetime and replace a stalled pool without aborting other requests."""
+        if not hasattr(self, "_http_slots"):
+            self._http_slots = asyncio.Semaphore(16)
+            self._http_users = {}
+            self._http_retired = set()
+        async with self._http_slots:
+            for attempt in range(2):
+                async with self._http_reinit_lock:
+                    if not self.http_client or self.http_client.is_closed:
+                        await self._init_http_client()
+                    client = self.http_client
+                    self._http_users[client] = self._http_users.get(client, 0) + 1
+                try:
+                    try:
+                        return await asyncio.wait_for(client.get(url, **kwargs), timeout=35)
+                    except asyncio.TimeoutError as exc:
+                        raise httpx.ReadTimeout("HTTP 请求总耗时超过 35 秒", request=httpx.Request("GET", url)) from exc
+                except httpx.PoolTimeout:
+                    if attempt:
+                        raise
+                    async with self._http_reinit_lock:
+                        if self.http_client is client:
+                            await self._init_http_client()
+                            logger.warning(f"[TwitterRSS] 本地 HTTP 连接池阻塞，已重建并重试（非源站封禁）: {url}")
+                finally:
+                    self._http_users[client] -= 1
+                    if not self._http_users[client]:
+                        self._http_users.pop(client)
+                        if client in self._http_retired:
+                            self._http_retired.remove(client)
+                            await client.aclose()
 
     def _feed_host(self, url: str) -> str:
         host = (urlsplit(url).hostname or "").lower()
@@ -693,6 +717,9 @@ class TwitterRssPlugin(Star):
                 state["next"] = time.monotonic() + interval
                 try:
                     resp = await self._http_get_with_recovery(url)
+                except httpx.PoolTimeout:
+                    # Local resource exhaustion is not evidence that this host failed.
+                    raise
                 except httpx.RequestError:
                     self._cool_down_feed(url)
                     raise
@@ -723,6 +750,8 @@ class TwitterRssPlugin(Star):
                     pass
         if self.http_client and not self.http_client.is_closed:
             await self.http_client.aclose()
+        for retired in list(getattr(self, "_http_retired", set())):
+            await retired.aclose()
         logger.info("[TwitterRSS] 插件后台任务与 HTTP 客户端已安全关闭。")
 
     # =========================================================================
@@ -806,6 +835,7 @@ class TwitterRssPlugin(Star):
         def _copy_img():
             src_p = pathlib.Path(digest_img_path)
             if src_p.exists() and src_p.is_file():
+                self._validate_rendered_image_sync(str(src_p))
                 shutil.copy2(src_p, archived_img_path)
 
         await asyncio.to_thread(_copy_img)
@@ -840,6 +870,7 @@ class TwitterRssPlugin(Star):
             "theme_end": render_data.get("theme_end", {}),
             "items_meta": light_items,
             "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "scheduled_at": render_data.get("scheduled_at"),
         }
         await self._save_digest_archive()
         return str(archived_img_path)
@@ -863,7 +894,11 @@ class TwitterRssPlugin(Star):
 
         img_path_str = str(record.get("image_path") or "")
         if img_path_str and pathlib.Path(img_path_str).exists():
-            return True, img_path_str
+            try:
+                await asyncio.to_thread(self._validate_rendered_image_sync, img_path_str)
+                return True, img_path_str
+            except (ValueError, OSError):
+                logger.warning(f"[TwitterRSS] 日报归档图片无效，将从元数据重新渲染: {img_path_str}")
 
         items_meta = record.get("items_meta") or []
         if not items_meta:
@@ -1662,29 +1697,70 @@ class TwitterRssPlugin(Star):
             interval_min = max(2, int(self._get_setting("poll_interval_minutes", 15) or 15))
             await asyncio.sleep(interval_min * 60)
 
+    async def _digest_tick(self):
+        """Retry each group's scheduled edition until local midnight, persisting successes."""
+        if not self._get_setting("enable_daily_digest", True):
+            return
+        now = datetime.datetime.now()
+        target_time = str(self._get_setting("daily_digest_time", "08:30") or "08:30").strip()
+        hour, minute = map(int, target_time.split(":"))
+        scheduled = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        today = now.strftime("%Y-%m-%d")
+        jobs = self.state.setdefault("digest_deliveries", {})
+        for umo in list(jobs):
+            if jobs[umo].get("date") != today:
+                del jobs[umo]
+        if now < scheduled:
+            return
+        for rule in self._get_group_rules():
+            if not rule.get("enable_daily_digest", True):
+                continue
+            umo = self._resolve_target_umo(rule.get("target_umo", ""))
+            if not umo:
+                continue
+            job = jobs.setdefault(umo, {"date": today, "scheduled_at": scheduled.isoformat(),
+                                        "sent": False, "retry_at": 0})
+            if job.get("sent") or time.time() < job.get("retry_at", 0):
+                continue
+            edition_time = datetime.datetime.fromisoformat(job["scheduled_at"])
+            if datetime.datetime.now().date() != edition_time.date():
+                break
+            job["retry_at"] = time.time() + 300
+            await self._save_state()
+            try:
+                archive = self.digest_archive.get(umo, {}).get(today, {})
+                if archive and archive.get("scheduled_at") == job["scheduled_at"]:
+                    ok, path = await self._get_or_rerender_archived_digest(umo, today)
+                    if not ok:
+                        raise RuntimeError("当日日报归档无法恢复")
+                    if datetime.datetime.now().date() != edition_time.date():
+                        break
+                    result = await self.context.send_message(umo, MessageChain([self._make_image_comp(path)]))
+                    if result is False:
+                        raise RuntimeError("日报发送失败")
+                    sent = True
+                else:
+                    sent, _ = await self.run_daily_digest(target_rule=rule, scheduled_at=edition_time)
+                if sent:
+                    job["sent"] = True
+                    logger.info(f"[TwitterRSS] 群[{rule.get('group_name')}] {today} {target_time} 日报已送达，不再补发")
+                else:
+                    logger.warning(f"[TwitterRSS] 群[{rule.get('group_name')}] 当日日报未送达，5 分钟后重试，跨日停止")
+            except Exception as exc:
+                logger.warning(f"[TwitterRSS] 群[{rule.get('group_name')}] 当日日报补发失败，5 分钟后重试，跨日停止: {exc}")
+            if not job.get("sent"):
+                job["retry_at"] = time.time() + 300
+            await self._save_state()
+
     async def _digest_loop(self):
         await asyncio.sleep(15)
         while self._started:
             try:
-                if self._get_setting("enable_daily_digest", True):
-                    target_time = str(self._get_setting("daily_digest_time", "08:30") or "08:30").strip()
-                    now = datetime.datetime.now()
-                    now_hm = now.strftime("%H:%M")
-                    today_str = now.strftime("%Y-%m-%d")
-
-                    if (
-                        now_hm == target_time
-                        and self.state.get("last_digest_date") != today_str
-                    ):
-                        self.state["last_digest_date"] = today_str
-                        await self._save_state()
-                        logger.info(f"[TwitterRSS] 到达每日新闻精选推送时间 ({target_time})，开始按群生成24小时新闻简报...")
-                        await self.run_daily_digest()
+                await self._digest_tick()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error(f"[TwitterRSS] 每日24小时新闻定时任务异常: {e}")
-
+            except Exception as exc:
+                logger.error(f"[TwitterRSS] 每日新闻定时任务异常: {exc}")
             await asyncio.sleep(30)
 
     async def _cleanup_image_cache(self):
@@ -2815,7 +2891,7 @@ class TwitterRssPlugin(Star):
 
         try:
             # 仅请求前 3MB 字节即可包含 MP4 moov + 首帧关键帧，避免下载整个大视频
-            resp = await self.http_client.get(
+            resp = await self._http_get_with_recovery(
                 video_url, headers={"Range": "bytes=0-3145728"}
             )
             if resp.status_code not in (200, 206):
@@ -3697,29 +3773,42 @@ class TwitterRssPlugin(Star):
         except Exception as e:
             logger.debug(f"[TwitterRSS] 自动裁切图片边缘跳过: {e}")
 
+    @staticmethod
+    def _validate_rendered_image_sync(image_path: str) -> None:
+        from PIL import Image
+        try:
+            with Image.open(image_path) as image:
+                image.verify()
+        except (OSError, ValueError, SyntaxError) as exc:
+            raise ValueError("渲染服务未返回有效图片（可能返回了 Internal Server Error）") from exc
+
     async def _render_html_to_image(
         self, template_str: str, render_data: dict[str, Any]
     ) -> str:
-        options = {
-            "full_page": True,
-            "type": "png",
-            "scale": "device",
-        }
-        try:
-            res = await self.html_render(
-                template_str, render_data, return_url=False, options=options
-            )
-        except TypeError:
-            res = await self.html_render(template_str, render_data, options=options)
-
-        if res and str(res).startswith(("http://", "https://")):
-            local_p, _ = await self._download_image_cached(str(res))
-            if local_p:
-                res = local_p
-
-        if res and not str(res).startswith(("http://", "https://")):
-            await asyncio.to_thread(self._trim_rendered_image_sync, str(res))
-        return res
+        options = {"full_page": True, "type": "png", "scale": "device"}
+        for attempt in range(2):
+            try:
+                try:
+                    res = await self.html_render(
+                        template_str, render_data, return_url=False, options=options
+                    )
+                except TypeError:
+                    res = await self.html_render(template_str, render_data, options=options)
+                if not res:
+                    raise ValueError("渲染服务未返回图片路径")
+                if str(res).startswith(("http://", "https://")):
+                    local_p, _ = await self._download_image_cached(str(res))
+                    if not local_p:
+                        raise ValueError("渲染结果下载失败，无法验证图片")
+                    res = local_p
+                await asyncio.to_thread(self._validate_rendered_image_sync, str(res))
+                await asyncio.to_thread(self._trim_rendered_image_sync, str(res))
+                return str(res)
+            except Exception as exc:
+                if attempt:
+                    raise RuntimeError(f"推文/日报图片渲染失败，已停止归档和上传: {exc}") from exc
+                logger.warning(f"[TwitterRSS] 图片渲染或校验失败，2 秒后重试: {exc}")
+                await asyncio.sleep(2)
 
     @staticmethod
     def _make_image_comp(path_or_url: str) -> Comp.Image:
@@ -3756,7 +3845,6 @@ class TwitterRssPlugin(Star):
             "quote_info": enriched_tweet.get("quote_info"),
             "display_images": enriched_tweet.get("display_images", []),
             "pub_date": enriched_tweet.get("pub_date", ""),
-            "vision_matched_tags": enriched_tweet.get("vision_matched_tags", []),
         }
 
         logger.info(
@@ -4145,7 +4233,8 @@ class TwitterRssPlugin(Star):
             return stats
 
     async def run_daily_digest(
-        self, target_rule: dict[str, Any] | None = None
+        self, target_rule: dict[str, Any] | None = None,
+        scheduled_at: datetime.datetime | None = None,
     ) -> tuple[bool, str]:
         """按群聊各自订阅的账号汇总过去 24 小时推文，渲染马卡龙色系《今日要闻》长图并推送"""
         rules = (
@@ -4160,7 +4249,11 @@ class TwitterRssPlugin(Star):
         if not rules:
             return False, "未找到已启用每日简报的群聊配置。"
 
-        cutoff = time.time() - 24 * 3600
+        edition_time = scheduled_at or datetime.datetime.now()
+        if scheduled_at and datetime.datetime.now().date() != scheduled_at.date():
+            return False, "日报已跨日过期，不再补发。"
+        window_end = edition_time.timestamp()
+        cutoff = window_end - 24 * 3600
         if not any(t.get("timestamp", 0) >= cutoff for t in self.history_tweets):
             await self.check_all_accounts(manual=False)
 
@@ -4173,6 +4266,7 @@ class TwitterRssPlugin(Star):
 
         pushed_any = False
         last_img_path = ""
+        render_failed = False
 
         for rule in rules:
             umo = self._resolve_target_umo(rule.get("target_umo", ""))
@@ -4182,7 +4276,7 @@ class TwitterRssPlugin(Star):
             recent_tweets = [
                 t
                 for t in self.history_tweets
-                if t.get("timestamp", 0) >= cutoff
+                if cutoff <= t.get("timestamp", 0) <= window_end
                 and self._matches_rule_subscription(t, rule)
             ]
             if not recent_tweets:
@@ -4332,9 +4426,10 @@ class TwitterRssPlugin(Star):
                 rendered_items, theme_palette
             )
 
-            now = datetime.datetime.now()
+            now = edition_time
             render_data = {
                 "date_str": now.strftime("%Y.%m.%d"),
+                "scheduled_at": scheduled_at.isoformat() if scheduled_at else None,
                 "total_count": len(recent_tweets),
                 "account_count": len(self._get_rule_accounts(rule)) + len(self._get_rule_hashtags(rule)),
                 "theme": lead_palette,
@@ -4343,7 +4438,18 @@ class TwitterRssPlugin(Star):
                 "items": rendered_items,
             }
 
-            digest_img_path = await self._render_html_to_image(DAILY_DIGEST_TMPL, render_data)
+            # Persist the edition before rendering so retries reuse the same selected items.
+            if scheduled_at:
+                await self._archive_daily_digest(
+                    umo=umo, group_name=str(rule.get("group_name") or umo),
+                    date_key=now.strftime("%Y-%m-%d"), digest_img_path="", render_data=render_data,
+                )
+            try:
+                digest_img_path = await self._render_html_to_image(DAILY_DIGEST_TMPL, render_data)
+            except Exception as exc:
+                render_failed = True
+                logger.error(f"[TwitterRSS] 群[{rule.get('group_name')}] 日报渲染失败，跳过本群，继续其他群: {exc}")
+                continue
             date_key = now.strftime("%Y-%m-%d")
             archived_path = await self._archive_daily_digest(
                 umo=umo,
@@ -4354,15 +4460,21 @@ class TwitterRssPlugin(Star):
             )
             send_img_path = archived_path if pathlib.Path(archived_path).exists() else digest_img_path
             try:
-                await self.context.send_message(
+                if scheduled_at and datetime.datetime.now().date() != scheduled_at.date():
+                    return False, "日报已跨日过期，不再补发。"
+                result = await self.context.send_message(
                     umo, MessageChain([self._make_image_comp(send_img_path)])
                 )
+                if result is False:
+                    raise RuntimeError("日报发送失败")
                 pushed_any = True
                 last_img_path = send_img_path
             except Exception as e:
                 logger.error(f"[TwitterRSS] 向会话 {umo} 推送24小时要闻长图失败: {e}")
 
         if not pushed_any:
+            if render_failed:
+                return False, "日报图片渲染失败，重试后仍未获得有效图片；请检查渲染服务后重试。"
             return False, "本群过去 24 小时内暂无收录的推文内容。"
         return True, last_img_path
 

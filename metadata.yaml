@@ -2,7 +2,7 @@ name: astrbot_plugin_twitter_rss
 display_name: 推特智能订阅 黄金版
 desc: 按照推特 RSS 订阅获取推文/标签，支持按群聊独立配置订阅账号与视觉标签过滤（必须包含+任意匹配+排除标签）、无黑边推文卡片渲染（含正文与蓝色标签翻译）+原图单独发送，以及《今日要闻》24小时精选长图推送。
 short_desc: 推特/标签分群独立订阅 + 视觉标签过滤(必含/任一/排除) + 推文翻译卡片渲染 + 每日要闻长图
-version: v1.4.2
+version: v1.4.3
 author: Berumic
 repo: https://github.com/Berumic/astrbot_plugin_twitter_rss
 astrbot_version: ">=4.5.0"
