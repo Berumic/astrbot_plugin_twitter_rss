@@ -1074,6 +1074,11 @@ class TwitterRssPlugin(Star):
                 panels.setdefault(account, {})[field] = value
         return panels
 
+    def _account_availability_suffix(self, account: str) -> str:
+        key = self._extract_clean_handle(account).lower()
+        statuses = self.state.get("unavailable_accounts", {})
+        return " [疑似不存在或暂不可用]" if key in statuses else ""
+
     def _ingest_account_switches_from_rules(self) -> bool:
         """
         将各群 group_rule['account_switches'] 中每个订阅账号各自独立的四项开关面板同步持久化到
@@ -1164,11 +1169,11 @@ class TwitterRssPlugin(Star):
                 summary = self._format_override_summary(ov)
                 if a in clean_accts:
                     if summary:
-                        decorated_list.append(f"🟠 {a} [{summary}]")
+                        decorated_list.append(f"🟠 {a} [{summary}]" + self._account_availability_suffix(a))
                     else:
-                        decorated_list.append(a)
+                        decorated_list.append(a + self._account_availability_suffix(a))
 
-                display = f"{a} [已修改: {summary}]" if summary else a
+                display = (f"{a} [已修改: {summary}]" if summary else a) + self._account_availability_suffix(a)
                 if a.lower() == selected or "account" not in normalized_sw:
                     normalized_sw["account"] = display
                 for k_short, k_cfg in key_map.items():
@@ -1392,7 +1397,7 @@ class TwitterRssPlugin(Star):
                             fields = {}
                             for account in acct_panels:
                                 summary = self._format_override_summary(overrides.get(account.lower(), {}))
-                                choice = f"{account} [已修改: {summary}]" if summary else account
+                                choice = (f"{account} [已修改: {summary}]" if summary else account) + self._account_availability_suffix(account)
                                 choices.append(choice)
                                 for key, label in (("push_retweet", "转推 (RT)"), ("push_quote_retweet", "引用转推"), ("push_reply", "回复"), ("push_text", "纯文字"), ("push_image", "图片")):
                                     fields[f"ov_{account}__{key}"] = {
@@ -1860,61 +1865,22 @@ class TwitterRssPlugin(Star):
 
         return explicit_404_hits >= 2
 
-    def _auto_remove_invalid_account(
-        self, account: str, target_rule: dict[str, Any] | None = None
-    ) -> list[str]:
-        """当确认某个推特 ID 不存在时，自动将其从订阅列表中移除并保存配置"""
-        acct_lower = account.strip().lstrip("@").lower()
-        removed_group_names: list[str] = []
-
-        rules_to_check = (
-            [target_rule]
-            if target_rule is not None
-            else self._get_group_rules()
-        )
-        all_rules = self._get_group_rules()
-        changed = False
-
-        for r in all_rules:
-            if target_rule is not None and r is not target_rule:
-                continue
-            accts = self._get_rule_accounts(r)
-            new_accts = [a for a in accts if a.lower() != acct_lower]
-            if len(new_accts) != len(accts):
-                r["twitter_accounts"] = new_accts
-                gname = str(r.get("group_name") or r.get("target_umo") or "未命名群聊")
-                removed_group_names.append(gname)
-                changed = True
-
-        # 同步清理旧版全局顶层列表（若存在）
-        legacy_accts = self._clean_str_list(self._get_setting("twitter_accounts", []))
-        if any(a.lstrip("@").lower() == acct_lower for a in legacy_accts):
-            self.config["twitter_accounts"] = [
-                a for a in legacy_accts if a.lstrip("@").lower() != acct_lower
-            ]
-            changed = True
-
-        if not self.state.get("migrated_skip_rt_v142"):
-            self.config.setdefault("global_push_config", {})["skip_retweets"] = True
-            for r in self._get_setting("group_subscriptions", []):
-                if isinstance(r, dict) and "skip_retweets" not in r:
-                    r["skip_retweets"] = True
-            self.state["migrated_skip_rt_v142"] = True
-            changed = True
-            try:
-                self.state_file.write_text(
-                    json.dumps(self.state, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-            except Exception:
-                pass
-
-        if changed:
-            self._save_plugin_config()
-            logger.warning(
-                f"[TwitterRSS] 检测到推特账号 @{account} 不存在 (404)，已自动从订阅列表 {removed_group_names} 中移除。"
-            )
-        return removed_group_names
+    async def _set_account_unavailable(self, account: str, unavailable: bool):
+        """Persist a suspected missing account without changing subscriptions."""
+        key = account.strip().lstrip("@").lower()
+        statuses = self.state.setdefault("unavailable_accounts", {})
+        if unavailable:
+            self._not_found_accounts.add(key)
+            if key in statuses:
+                return
+            statuses[key] = "疑似不存在或暂不可用"
+        else:
+            self._not_found_accounts.discard(key)
+            if key not in statuses:
+                return
+            statuses.pop(key)
+        await self._save_state()
+        self._sync_subscribed_accounts_to_schema()
 
     async def _fetch_account_tweets(self, account: str) -> list[dict[str, Any]]:
         if not self.http_client or self.http_client.is_closed:
@@ -1927,8 +1893,8 @@ class TwitterRssPlugin(Star):
         if not acct_clean.startswith(("http://", "https://")) and not re.match(
             r"^[A-Za-z0-9_]{1,15}$", acct_clean
         ):
-            self._not_found_accounts.add(acct_key)
-            logger.warning(f"[TwitterRSS] 账号 ID 格式无效 ({account})，标记为不存在。")
+            await self._set_account_unavailable(account, True)
+            logger.warning(f"[TwitterRSS] 账号 ID 格式无效 ({account})，标记为疑似不存在或暂不可用，保留订阅。")
             return []
 
         candidate_urls = self._prioritize_feed_urls(self._get_candidate_urls(account))
@@ -1984,6 +1950,7 @@ class TwitterRssPlugin(Star):
                     )
 
                 if tweets:
+                    await self._set_account_unavailable(account, False)
                     logger.info(
                         f"[TwitterRSS] 账号 @{acct_clean} 抓取成功: 从 {url} 解析到 {len(tweets)} 条推文"
                     )
@@ -2000,8 +1967,8 @@ class TwitterRssPlugin(Star):
                 errors.append(f"{url} -> {type(e).__name__}: {err_detail}")
 
         if explicit_404_hits and await self._check_user_not_found_on_twitter(account, explicit_404_hits):
-            self._not_found_accounts.add(acct_key)
-            logger.warning(f"[TwitterRSS] 经核验推特账号 @{account} 不存在 (404 User Not Found)。")
+            await self._set_account_unavailable(account, True)
+            logger.warning(f"[TwitterRSS] 第三方接口提示账号 @{account} 疑似不存在或暂不可用，已标注并保留订阅。")
             return []
 
         logger.warning(
@@ -4029,14 +3996,7 @@ class TwitterRssPlugin(Star):
             async def process_source(rule, umo, key, account, is_hashtag, tweets):
                 if not tweets:
                     if not is_hashtag and account.strip().lstrip("@").lower() in self._not_found_accounts:
-                        self._auto_remove_invalid_account(account, target_rule=rule)
-                        stats.setdefault("removed_accounts", []).append(account)
-                        try:
-                            await self.context.send_message(umo, MessageChain([Comp.Plain(
-                                f"🗑️ [TwitterRSS] 账号 @{account} 不存在，已从本群订阅中移除。"
-                            )]))
-                        except Exception as exc:
-                            logger.warning(f"[TwitterRSS] 发送无效账号通知失败: {exc}")
+                        stats.setdefault("unavailable_accounts", []).append(account)
                     return
                 state_key = f"{umo}::{key}"
                 # Migrate older case-sensitive account keys without replaying history.
@@ -4192,7 +4152,7 @@ class TwitterRssPlugin(Star):
                 sources = [(a, False) for a in self._get_rule_accounts(group_rule)]
                 sources += [(f"#{tag}", True) for tag in self._get_rule_hashtags(group_rule)]
             stats = {"accounts": 0, "subscriptions": 0, "fetched": 0, "sampled": 0,
-                     "evaluated": 0, "pushed": 0, "filtered": 0, "failed": 0, "removed_accounts": []}
+                     "evaluated": 0, "pushed": 0, "filtered": 0, "failed": 0, "unavailable_accounts": []}
             if not sources or not umo:
                 return stats
             if not target_account.strip():
@@ -4216,8 +4176,7 @@ class TwitterRssPlugin(Star):
                     return account, []
                 stats["fetched"] += len(tweets)
                 if not tweets and not is_hashtag and account.strip().lstrip("@").lower() in self._not_found_accounts:
-                    self._auto_remove_invalid_account(account, target_rule=group_rule)
-                    stats["removed_accounts"].append(account)
+                    stats["unavailable_accounts"].append(account)
                 return account, tweets
 
             for offset in range(0, len(sources), concurrency):
@@ -4609,12 +4568,11 @@ class TwitterRssPlugin(Star):
         rule["twitter_accounts"] = accounts
         self._save_plugin_config()
 
-        # 立即核验该推特 ID 是否存在，若不存在则自动移除
+        # 核验失败时保留订阅，在列表中显示状态
         await self._fetch_account_tweets(acct)
         if acct.lower() in self._not_found_accounts:
-            self._auto_remove_invalid_account(acct, target_rule=rule)
             yield event.plain_result(
-                f"🗑️ 检测到推特 ID @{acct} 不存在或已注销，已自动从当前群聊【{rule.get('group_name')}】订阅列表中移除。"
+                f"⚠️ 已添加订阅 @{acct}，但第三方接口提示账号疑似不存在或暂不可用。已保留订阅并在 /tw list 中标注，将继续检查。"
             )
             return
 
@@ -4819,7 +4777,12 @@ class TwitterRssPlugin(Star):
         """查看当前群聊的独立订阅、各账号独立类型开关与标签过滤配置"""
         rule = self._find_or_create_group_rule(event, create_if_missing=True)
         accounts = self._get_rule_accounts(rule)
-        formatted_accounts = [self._format_account_with_overrides(a, rule) for a in accounts]
+        statuses = self.state.get("unavailable_accounts", {})
+        formatted_accounts = [
+            self._format_account_with_overrides(a, rule)
+            + (" ⚠️ [疑似不存在或暂不可用]" if a.strip().lstrip("@").lower() in statuses else "")
+            for a in accounts
+        ]
         hashtags = self._get_rule_hashtags(rule)
         must_tags = self._clean_str_list(rule.get("must_include_image_tags", []))
         any_tags = self._clean_str_list(rule.get("any_include_image_tags", []))
@@ -5023,14 +4986,14 @@ class TwitterRssPlugin(Star):
             f"🔄 正在按本群【{rule.get('group_name')}】独立规则检查 {len(accounts)} 个账号、{len(hashtags)} 个标签的新推文，请稍候..."
         )
         stats = await self.check_all_accounts(manual=True, target_rule=rule)
-        removed_list = stats.get("removed_accounts") or []
-        removed_tip = (
-            f"\n🗑️ 已自动移除不存在的推特 ID: {', '.join('@' + a for a in removed_list)}"
-            if removed_list
+        unavailable_list = stats.get("unavailable_accounts") or []
+        unavailable_tip = (
+            f"\n⚠️ 疑似不存在或暂不可用（已保留订阅）: {', '.join('@' + a for a in unavailable_list)}"
+            if unavailable_list
             else ""
         )
         yield event.plain_result(
-            f"✅ 本群检查完成！共拉取 {stats['fetched']} 条推文，发现 {stats['new']} 条新推文，通过本群规则筛选并推送 {stats['pushed']} 条。{removed_tip}"
+            f"✅ 本群检查完成！共拉取 {stats['fetched']} 条推文，发现 {stats['new']} 条新推文，通过本群规则筛选并推送 {stats['pushed']} 条。{unavailable_tip}"
         )
 
     @filter.permission_type(filter.PermissionType.ADMIN)
@@ -5076,8 +5039,8 @@ class TwitterRssPlugin(Star):
         )
         stats = await self.test_push_for_group(group_rule=rule, limit=limit, target_account=target_acct)
         if stats["fetched"] == 0:
-            removed = stats.get("removed_accounts", [])
-            tip = f"已自动移除不存在的账号：{'、'.join(removed)}。" if removed else "请检查订阅源与网络配置。"
+            unavailable = stats.get("unavailable_accounts", [])
+            tip = f"以下账号疑似不存在或暂不可用，已保留订阅并在 /tw list 中标注：{'、'.join(unavailable)}。" if unavailable else "请检查订阅源与网络配置。"
             yield event.plain_result(f"⚠️ 未获取到推文。{tip}")
             return
         shortage = f"\n• 本次仅抽取 {stats['sampled']} 条：订阅不足，或选中的订阅无可用推文；未扩大测试范围" if stats["sampled"] < limit else ""

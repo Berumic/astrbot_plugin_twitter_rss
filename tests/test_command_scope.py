@@ -27,7 +27,9 @@ def load_plugin_methods():
         "_validate_rendered_image_sync", "_render_html_to_image", "_http_get_with_recovery",
         "_init_http_client", "_normalize_proxy_url", "_fetch_feed_response", "_feed_host",
         "_feed_hosts", "_cool_down_feed",
-        "_digest_tick",
+        "_digest_tick", "_set_account_unavailable", "tw_list",
+        "_account_availability_suffix", "_ingest_account_switches_from_rules",
+        "_account_switch_panels", "_format_override_summary", "_parse_switch_mode",
     }
     original = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "TwitterRssPlugin")
     methods = [n for n in original.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in wanted]
@@ -81,9 +83,58 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
         p._save_state = AsyncMock()
         p._save_history = AsyncMock()
         p._save_plugin_config = Mock()
+        p._sync_subscribed_accounts_to_schema = Mock()
         p._has_admin_permission = Mock(return_value=True)
         p._fetch_account_tweets = AsyncMock(side_effect=self.tweets)
         p._fetch_hashtag_tweets = AsyncMock(side_effect=lambda tag: self.tweets("#" + tag))
+
+    async def test_missing_account_is_retained_during_check_and_test(self):
+        p = self.plugin
+        before = copy.deepcopy(p.config)
+        async def missing(account):
+            await p._set_account_unavailable(account, True)
+            return []
+        p._fetch_account_tweets = AsyncMock(side_effect=missing)
+        p._fetch_hashtag_tweets = AsyncMock(return_value=[])
+        await p.check_all_accounts(manual=True, target_rule=self.rule)
+        await p.test_push_for_group(self.rule, limit=1, target_account="alice")
+        self.assertEqual(p.config, before)
+        p._save_plugin_config.assert_not_called()
+        self.assertIn("alice", p.state["unavailable_accounts"])
+
+    async def test_settings_mark_missing_account_without_changing_handle_or_switches(self):
+        p = self.plugin
+        p.state["unavailable_accounts"] = {"alice": "疑似不存在或暂不可用"}
+        p._ingest_account_switches_from_rules()
+        self.assertEqual(self.rule["twitter_accounts"][0], "alice [疑似不存在或暂不可用]")
+        self.assertEqual(p._get_rule_accounts(self.rule)[0], "alice")
+        self.assertEqual(self.rule["account_switches"]["account"], "alice [疑似不存在或暂不可用]")
+        self.assertIn("ov_alice__push_image", self.rule["account_switches"])
+        await p._set_account_unavailable("alice", False)
+        p._sync_subscribed_accounts_to_schema.assert_called_once()
+        p._ingest_account_switches_from_rules()
+        self.assertEqual(self.rule["twitter_accounts"][0], "alice")
+        self.assertEqual(self.rule["account_switches"]["account"], "alice")
+
+    async def test_account_status_is_persisted_and_cleared_on_recovery(self):
+        p = self.plugin
+        await p._set_account_unavailable("@Alice", True)
+        self.assertIn("alice", p.state["unavailable_accounts"])
+        p._save_state.assert_awaited_once()
+        await p._set_account_unavailable("ALICE", False)
+        self.assertNotIn("alice", p.state["unavailable_accounts"])
+        self.assertNotIn("alice", p._not_found_accounts)
+        self.assertEqual(p._save_state.await_count, 2)
+
+    async def test_subscription_list_displays_persisted_warning(self):
+        p = self.plugin
+        p.state["unavailable_accounts"] = {"alice": "疑似不存在或暂不可用"}
+        p._format_account_with_overrides = Mock(side_effect=lambda a, r: "@" + a)
+        p._get_global_type_defaults = Mock(return_value=dict.fromkeys(
+            ["retweet", "quote_retweet", "reply", "text", "image"], True))
+        messages = [m async for m in p.tw_list(Event())]
+        self.assertIn("@alice ⚠️ [疑似不存在或暂不可用]", messages[0])
+        self.assertNotIn("@bob ⚠️", messages[0])
 
     @staticmethod
     def tweets(account):
