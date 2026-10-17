@@ -32,6 +32,19 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(p.html_render.await_count, 2)
             p._trim_rendered_image_sync.assert_called_once_with(str(good))
 
+    async def test_embedded_fonts_are_passed_to_renderer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            good = Path(folder) / "good.png"
+            Image.new("RGB", (10, 10)).save(good)
+            p = self.plugin
+            p.html_render = AsyncMock(return_value=str(good))
+            p._trim_rendered_image_sync = Mock()
+            await p._render_html_to_image("<html><head></head><body>{{ orig_body }}</body></html>", {"orig_body": "𝙉𝙚𝙬"})
+            template, data = p.html_render.await_args.args
+            self.assertIn("data:font/woff2;base64,", template)
+            self.assertIn("Twitter Math", template)
+            self.assertEqual(data["orig_body"], "𝙉𝙚𝙬")
+
     async def test_persistent_invalid_render_stops_before_upload(self):
         with tempfile.TemporaryDirectory() as folder:
             bad = Path(folder) / "bad.png"

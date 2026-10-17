@@ -1,6 +1,7 @@
 """Exercise actual plugin methods without starting AstrBot or making network calls."""
 import ast
 import asyncio
+import base64
 import copy
 import datetime
 import logging
@@ -22,6 +23,7 @@ def load_plugin_methods():
         "_get_rule_accounts", "_get_rule_hashtags", "_tweet_identity", "_resolve_target_umo",
         "_record_event_umo", "_find_or_create_group_rule", "check_all_accounts",
         "test_push_for_group", "tw_test", "tw_check", "run_daily_digest", "_matches_rule_subscription",
+        "_render_font_css", "push_tweet_to_umo",
         "_validate_rendered_image_sync", "_render_html_to_image", "_http_get_with_recovery",
         "_init_http_client", "_normalize_proxy_url", "_fetch_feed_response", "_feed_host",
         "_feed_hosts", "_cool_down_feed",
@@ -35,7 +37,9 @@ def load_plugin_methods():
     sections = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "CONFIG_SECTIONS" for t in n.targets))
     module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
                              ast.ClassDef(name="Plugin", bases=[], keywords=[], body=methods, decorator_list=[])], type_ignores=[])
-    namespace = dict(asyncio=asyncio, copy=copy, random=random, re=re, httpx=httpx,
+    namespace = dict(asyncio=asyncio, copy=copy, random=random, re=re, base64=base64, httpx=httpx,
+                     __file__=str(Path(__file__).resolve().parents[1] / "main.py"),
+                     TWEET_CARD_TMPL="tweet-template",
                      time=time, datetime=datetime, pathlib=pathlib,
                      MACARON_PALETTES=[{}], DAILY_DIGEST_TMPL="digest-template",
                      _clean_digest_text=lambda text, **kwargs: text,
@@ -244,6 +248,19 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["total_count"], 1)
         self.assertEqual(data["scheduled_at"], edition.isoformat())
         self.assertEqual(p._archive_daily_digest.await_count, 2)
+
+    async def test_render_preserves_styled_unicode_and_quote_text(self):
+        text = "ʕ̢·͡˔·Ɂ̡̣ ⋈ 𝙉𝙚𝙬 𝘼𝙡𝙗𝙪𝙢 𝙍𝙚𝙡𝙚𝙖𝙨𝙚 ⋈ ʕ̢·͡˔·Ɂ̡̣"
+        tweet = dict(orig_body=text, translated_body=text, author_name=text,
+                     quote_info={"orig_body": text, "display_images": ["https://example.org/Ａ.jpg"]})
+        before = copy.deepcopy(tweet)
+        self.plugin._render_html_to_image = AsyncMock(side_effect=RuntimeError("stop before sending"))
+        with self.assertRaisesRegex(RuntimeError, "stop before sending"):
+            await Plugin.push_tweet_to_umo(self.plugin, tweet, self.rule["target_umo"])
+        payload = self.plugin._render_html_to_image.await_args.args[1]
+        for field in ("orig_body", "translated_body", "author_name", "quote_info"):
+            self.assertEqual(payload[field], tweet[field])
+        self.assertEqual(tweet, before)
 
 
 if __name__ == "__main__":

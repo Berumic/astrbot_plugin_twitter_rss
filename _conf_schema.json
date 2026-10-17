@@ -43,9 +43,9 @@
               "account": {
                 "description": "账号",
                 "type": "string",
-                "default": "_munel [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]",
+                "default": "_munel [已修改: 转推:不推送,回复:不推送,纯文字:不推送]",
                 "options": [
-                  "_munel [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]",
+                  "_munel [已修改: 转推:不推送,回复:不推送,纯文字:不推送]",
                   "oisiinira",
                   "nipeira",
                   "tttlr_",
@@ -90,11 +90,11 @@
                   "mame_berry_",
                   "goshichi_shoji",
                   "lodazheng",
-                  "#桃源郷屋さん [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 ]
               },
               "ov__munel__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -104,7 +104,7 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "_munel [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "_munel [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               },
               "ov__munel__push_reply": {
@@ -118,7 +118,7 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "_munel [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "_munel [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               },
               "ov__munel__push_text": {
@@ -132,7 +132,7 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "_munel [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "_munel [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               },
               "ov__munel__push_image": {
@@ -146,11 +146,11 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "_munel [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "_munel [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               },
               "ov_oisiinira__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -206,7 +206,7 @@
                 }
               },
               "ov_nipeira__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -262,7 +262,7 @@
                 }
               },
               "ov_tttlr___push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -318,7 +318,7 @@
                 }
               },
               "ov_Kanaecookie__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -374,7 +374,7 @@
                 }
               },
               "ov_ekureea__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -430,7 +430,7 @@
                 }
               },
               "ov_she_is_wired__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -486,7 +486,7 @@
                 }
               },
               "ov_H_H4NACH2___push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -542,7 +542,7 @@
                 }
               },
               "ov_sei_umehara__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -598,7 +598,7 @@
                 }
               },
               "ov_shhhInOvaaa__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -654,7 +654,7 @@
                 }
               },
               "ov_koronothu__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -710,7 +710,7 @@
                 }
               },
               "ov_zane290__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -766,7 +766,7 @@
                 }
               },
               "ov_1mop1cs__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -822,7 +822,7 @@
                 }
               },
               "ov_valiant_d69__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -878,7 +878,7 @@
                 }
               },
               "ov_kanato_345__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -934,7 +934,7 @@
                 }
               },
               "ov_may_chatte__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -990,7 +990,7 @@
                 }
               },
               "ov_rrrron_ri__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1046,7 +1046,7 @@
                 }
               },
               "ov_sofw0__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1102,7 +1102,7 @@
                 }
               },
               "ov_yumenkmc__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1158,7 +1158,7 @@
                 }
               },
               "ov_Koyansuee__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1214,7 +1214,7 @@
                 }
               },
               "ov_rkgksakana__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1270,7 +1270,7 @@
                 }
               },
               "ov_Shiguren_39__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1326,7 +1326,7 @@
                 }
               },
               "ov_eluthel1__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1382,7 +1382,7 @@
                 }
               },
               "ov_chokopaaa__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1438,7 +1438,7 @@
                 }
               },
               "ov_ten_o__o__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1494,7 +1494,7 @@
                 }
               },
               "ov_YY749649883736__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1550,7 +1550,7 @@
                 }
               },
               "ov_mitukineu__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1606,7 +1606,7 @@
                 }
               },
               "ov_hosiumix__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1662,7 +1662,7 @@
                 }
               },
               "ov_nanahira__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1718,7 +1718,7 @@
                 }
               },
               "ov_ul0ux__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1774,7 +1774,7 @@
                 }
               },
               "ov_cho_v_ko__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1830,7 +1830,7 @@
                 }
               },
               "ov_Creep41347922__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1886,7 +1886,7 @@
                 }
               },
               "ov_sana_natori__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1942,7 +1942,7 @@
                 }
               },
               "ov_eluthel__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -1998,7 +1998,7 @@
                 }
               },
               "ov_LuoSiPredator__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2054,7 +2054,7 @@
                 }
               },
               "ov_shioc621__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2110,7 +2110,7 @@
                 }
               },
               "ov_2299_1100__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2166,7 +2166,7 @@
                 }
               },
               "ov_siromiso555__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2222,7 +2222,7 @@
                 }
               },
               "ov_1229Noniha4__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2278,7 +2278,7 @@
                 }
               },
               "ov_mone_shiratsuyu__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2334,7 +2334,7 @@
                 }
               },
               "ov_tabi_0v0__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2390,7 +2390,7 @@
                 }
               },
               "ov_medexiti2000__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2446,7 +2446,7 @@
                 }
               },
               "ov_mame_berry___push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2502,7 +2502,7 @@
                 }
               },
               "ov_goshichi_shoji__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2558,7 +2558,7 @@
                 }
               },
               "ov_lodazheng__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2614,7 +2614,7 @@
                 }
               },
               "ov_#桃源郷屋さん__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2624,7 +2624,7 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "#桃源郷屋さん [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               },
               "ov_#桃源郷屋さん__push_reply": {
@@ -2638,7 +2638,7 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "#桃源郷屋さん [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               },
               "ov_#桃源郷屋さん__push_text": {
@@ -2652,7 +2652,7 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "#桃源郷屋さん [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               },
               "ov_#桃源郷屋さん__push_image": {
@@ -2666,7 +2666,651 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "#桃源郷屋さん [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
+                }
+              },
+              "ov__munel__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "_munel [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
+                }
+              },
+              "ov_oisiinira__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "oisiinira"
+                }
+              },
+              "ov_nipeira__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "nipeira"
+                }
+              },
+              "ov_tttlr___push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "tttlr_"
+                }
+              },
+              "ov_Kanaecookie__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Kanaecookie"
+                }
+              },
+              "ov_ekureea__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ekureea"
+                }
+              },
+              "ov_she_is_wired__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "she_is_wired"
+                }
+              },
+              "ov_H_H4NACH2___push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "H_H4NACH2_"
+                }
+              },
+              "ov_sei_umehara__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sei_umehara"
+                }
+              },
+              "ov_shhhInOvaaa__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shhhInOvaaa"
+                }
+              },
+              "ov_koronothu__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "koronothu"
+                }
+              },
+              "ov_zane290__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "zane290"
+                }
+              },
+              "ov_1mop1cs__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "1mop1cs"
+                }
+              },
+              "ov_valiant_d69__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "valiant_d69"
+                }
+              },
+              "ov_kanato_345__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "kanato_345"
+                }
+              },
+              "ov_may_chatte__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "may_chatte"
+                }
+              },
+              "ov_rrrron_ri__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "rrrron_ri"
+                }
+              },
+              "ov_sofw0__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sofw0"
+                }
+              },
+              "ov_yumenkmc__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "yumenkmc"
+                }
+              },
+              "ov_Koyansuee__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Koyansuee"
+                }
+              },
+              "ov_rkgksakana__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "rkgksakana"
+                }
+              },
+              "ov_Shiguren_39__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Shiguren_39"
+                }
+              },
+              "ov_eluthel1__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "eluthel1"
+                }
+              },
+              "ov_chokopaaa__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "chokopaaa"
+                }
+              },
+              "ov_ten_o__o__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ten_o__o"
+                }
+              },
+              "ov_YY749649883736__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "YY749649883736"
+                }
+              },
+              "ov_mitukineu__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mitukineu"
+                }
+              },
+              "ov_hosiumix__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "hosiumix"
+                }
+              },
+              "ov_nanahira__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "nanahira"
+                }
+              },
+              "ov_ul0ux__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ul0ux"
+                }
+              },
+              "ov_cho_v_ko__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "cho_v_ko"
+                }
+              },
+              "ov_Creep41347922__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "Creep41347922"
+                }
+              },
+              "ov_sana_natori__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "sana_natori"
+                }
+              },
+              "ov_eluthel__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "eluthel"
+                }
+              },
+              "ov_LuoSiPredator__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "LuoSiPredator"
+                }
+              },
+              "ov_shioc621__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shioc621"
+                }
+              },
+              "ov_2299_1100__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "2299_1100"
+                }
+              },
+              "ov_siromiso555__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "siromiso555"
+                }
+              },
+              "ov_1229Noniha4__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "1229Noniha4"
+                }
+              },
+              "ov_mone_shiratsuyu__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mone_shiratsuyu"
+                }
+              },
+              "ov_tabi_0v0__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "tabi_0v0"
+                }
+              },
+              "ov_medexiti2000__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "medexiti2000"
+                }
+              },
+              "ov_mame_berry___push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "mame_berry_"
+                }
+              },
+              "ov_goshichi_shoji__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "goshichi_shoji"
+                }
+              },
+              "ov_lodazheng__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "lodazheng"
+                }
+              },
+              "ov_#桃源郷屋さん__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               }
             }
@@ -2773,11 +3417,11 @@
                   "shioc621",
                   "shinra__bansho",
                   "ProjMoonStudio [已修改: 图片:直接推送]",
-                  "#桃源郷屋さん [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 ]
               },
               "ov_dayoon292__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2833,7 +3477,7 @@
                 }
               },
               "ov_omochinoie__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2889,7 +3533,7 @@
                 }
               },
               "ov_HlRA__Shine__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -2945,7 +3589,7 @@
                 }
               },
               "ov_shioc621__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -3001,7 +3645,7 @@
                 }
               },
               "ov_shinra__bansho__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -3057,7 +3701,7 @@
                 }
               },
               "ov_ProjMoonStudio__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -3113,7 +3757,7 @@
                 }
               },
               "ov_#桃源郷屋さん__push_retweet": {
-                "description": "转贴 (RT)",
+                "description": "转推 (RT)",
                 "type": "string",
                 "default": "默认",
                 "options": [
@@ -3123,7 +3767,7 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "#桃源郷屋さん [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               },
               "ov_#桃源郷屋さん__push_reply": {
@@ -3137,7 +3781,7 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "#桃源郷屋さん [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               },
               "ov_#桃源郷屋さん__push_text": {
@@ -3151,7 +3795,7 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "#桃源郷屋さん [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               },
               "ov_#桃源郷屋さん__push_image": {
@@ -3165,7 +3809,105 @@
                   "不推送"
                 ],
                 "condition": {
-                  "account_switches.account": "#桃源郷屋さん [已修改: 转贴:不推送,回复:不推送,纯文字:不推送]"
+                  "account_switches.account": "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
+                }
+              },
+              "ov_dayoon292__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "dayoon292"
+                }
+              },
+              "ov_omochinoie__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "omochinoie"
+                }
+              },
+              "ov_HlRA__Shine__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "HlRA__Shine"
+                }
+              },
+              "ov_shioc621__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shioc621"
+                }
+              },
+              "ov_shinra__bansho__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "shinra__bansho"
+                }
+              },
+              "ov_ProjMoonStudio__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "ProjMoonStudio [已修改: 图片:直接推送]"
+                }
+              },
+              "ov_#桃源郷屋さん__push_quote_retweet": {
+                "description": "引用转推",
+                "type": "string",
+                "default": "默认",
+                "options": [
+                  "默认",
+                  "推送",
+                  "直接推送",
+                  "不推送"
+                ],
+                "condition": {
+                  "account_switches.account": "#桃源郷屋さん [已修改: 转推:不推送,回复:不推送,纯文字:不推送]"
                 }
               }
             }
@@ -3252,10 +3994,16 @@
         "hint": "当订阅账号未单独配置【回复】开关时，默认按此项决定是否跳过回复推文（开启=默认不推送回复）。"
       },
       "skip_retweets": {
-        "description": "全局默认：跳过纯转贴 (RT)",
+        "description": "全局默认：跳过纯转推 (RT)",
         "type": "bool",
         "default": true,
-        "hint": "当订阅账号未单独配置【转贴】开关时，默认按此项决定是否跳过纯转贴（开启=默认不推送转贴）。"
+        "hint": "当订阅账号未单独配置【转推】开关时，默认按此项决定是否跳过纯转推（开启=默认不推送转推）。"
+      },
+      "skip_quote_retweets": {
+        "description": "全局默认：跳过引用转推",
+        "type": "bool",
+        "default": true,
+        "hint": "当订阅账号未单独配置【引用转推】开关时，默认按此项决定是否跳过引用转推（开启=默认不推送）。"
       }
     }
   },

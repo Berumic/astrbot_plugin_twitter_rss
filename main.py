@@ -33,7 +33,7 @@ from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, StarTools, register
 
 # 直接内嵌最新 HTML 模板，确保在 AstrBot 热重载 main.py 时不会因 sys.modules 缓存旧的 templates.py 而导致样式不更新
-TWEET_CARD_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #0f172a;\n    -webkit-font-smoothing: antialiased;\n  }\n  .card {\n    width: 100%;\n    background: #ffffff;\n    padding: 28px 32px;\n  }\n  .retweet-banner {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    margin-bottom: 12px;\n    padding-left: 8px;\n    font-size: 13.5px;\n    font-weight: 700;\n    color: #059669;\n  }\n  .retweet-icon {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 20px;\n    height: 20px;\n    border-radius: 6px;\n    background: rgba(16, 185, 129, 0.12);\n    color: #059669;\n    font-size: 13px;\n    font-weight: 900;\n  }\n  .retweet-mini-avatar {\n    width: 20px;\n    height: 20px;\n    border-radius: 50%;\n    overflow: hidden;\n    background: #10b981;\n    flex-shrink: 0;\n    border: 1px solid #d1fae5;\n  }\n  .retweet-mini-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .header {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    margin-bottom: 16px;\n  }\n  .author-box {\n    display: flex;\n    align-items: center;\n    gap: 14px;\n  }\n  .avatar {\n    width: 52px;\n    height: 52px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 22px;\n    font-weight: 700;\n    overflow: hidden;\n    flex-shrink: 0;\n    border: 1px solid #e2e8f0;\n  }\n  .avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n  }\n  .author-meta {\n    display: flex;\n    flex-direction: column;\n    gap: 3px;\n  }\n  .author-name-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n  }\n  .author-name {\n    font-size: 19px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .verified-badge {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 18px;\n    height: 18px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 11px;\n    font-weight: 900;\n  }\n  .author-sub {\n    font-size: 14px;\n    color: #64748b;\n    font-weight: 500;\n  }\n  .brand-logo {\n    width: 34px;\n    height: 34px;\n    border-radius: 9px;\n    background: #0f172a;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 19px;\n    font-weight: 900;\n  }\n  .tweet-section {\n    margin-bottom: 12px;\n  }\n  .tweet-body {\n    font-size: 18px;\n    line-height: 1.65;\n    color: #0f172a;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .tweet-tags {\n    margin-top: 4px;\n    font-size: 17px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .trans-section {\n    margin-top: 8px;\n    margin-bottom: 14px;\n    padding-top: 10px;\n    border-top: 1px solid #f1f5f9;\n  }\n  .trans-body {\n    font-size: 16.5px;\n    line-height: 1.65;\n    color: #334155;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .translation-label {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin-bottom: 6px;\n    color: #1d9bf0;\n    font-size: 14px;\n    font-weight: 500;\n    line-height: 20px;\n  }\n  .translation-label svg {\n    width: 17px;\n    height: 17px;\n    flex-shrink: 0;\n  }\n  .trans-tags {\n    margin-top: 4px;\n    font-size: 16.5px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .media-grid {\n    display: grid;\n    gap: 10px;\n    margin-top: 12px;\n    border-radius: 16px;\n    overflow: hidden;\n  }\n  .media-grid.count-1 {\n    grid-template-columns: 1fr;\n  }\n  .media-grid.count-2, .media-grid.count-3, .media-grid.count-4 {\n    grid-template-columns: 1fr 1fr;\n  }\n  .media-item {\n    width: 100%;\n    overflow: hidden;\n    background: #f8fafc;\n    border-radius: 14px;\n    border: 1px solid #e2e8f0;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .media-grid.count-1 .media-item img {\n    width: 100%;\n    height: auto;\n    display: block;\n  }\n  .media-grid.count-2 .media-item img,\n  .media-grid.count-3 .media-item img,\n  .media-grid.count-4 .media-item img {\n    width: 100%;\n    height: 320px;\n    object-fit: cover;\n    display: block;\n  }\n  /* 引用转发 (Quote Tweet) 嵌套卡片样式 */\n  .quote-card {\n    margin-top: 14px;\n    border: 1.5px solid #cbd5e1;\n    border-radius: 16px;\n    background: #f8fafc;\n    padding: 16px 18px;\n    overflow: hidden;\n  }\n  .quote-header {\n    display: flex;\n    align-items: center;\n    gap: 9px;\n    margin-bottom: 8px;\n  }\n  .quote-avatar {\n    width: 26px;\n    height: 26px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 13px;\n    font-weight: 700;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    overflow: hidden;\n    flex-shrink: 0;\n  }\n  .quote-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .quote-author-name {\n    font-size: 15px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .quote-author-handle {\n    font-size: 13.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .quote-body {\n    font-size: 15.5px;\n    line-height: 1.58;\n    color: #1e293b;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .quote-tags {\n    margin-top: 4px;\n    font-size: 15px;\n    line-height: 1.55;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n</style>\n</head>\n<body>\n  <div class="card" id="tweet-card">\n    {% if is_retweet and retweeter_username %}\n    <div class="retweet-banner">\n      <span class="retweet-icon">↻</span>\n      {% if retweeter_avatar_src %}\n      <span class="retweet-mini-avatar">\n        <img src="{{ retweeter_avatar_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </span>\n      {% endif %}\n      <span>{{ retweeter_name }} (@{{ retweeter_username }}) 已转推</span>\n    </div>\n    {% endif %}\n\n    <div class="header">\n      <div class="author-box">\n        <div class="avatar">\n          {% if avatar_src %}\n          <img src="{{ avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ author_initial }}\';" />\n          {% else %}\n          {{ author_initial }}\n          {% endif %}\n        </div>\n        <div class="author-meta">\n          <div class="author-name-row">\n            <span class="author-name">{{ author_name }}</span>\n            <span class="verified-badge">✓</span>\n          </div>\n          <span class="author-sub">@{{ username }}{% if pub_date %} · {{ pub_date }}{% endif %}</span>\n        </div>\n      </div>\n      <div class="brand-logo">𝕏</div>\n    </div>\n\n    {% if orig_body or orig_tags %}\n    <div class="tweet-section">\n      {% if orig_body %}\n      <div class="tweet-body">{{ orig_body }}</div>\n      {% endif %}\n      {% if orig_tags %}\n      <div class="tweet-tags">{{ orig_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if (orig_body and translated_body) or translated_tags %}\n    <div class="trans-section">\n      <div class="translation-label">\n        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">\n          <path d="M3 5h12M9 3v2M5 5c.8 4 3.5 7.5 7 10M13 5c-.8 4-3.5 7.5-8 11M13 21l4.5-11L22 21M15 17h5" />\n        </svg>\n        <span>AI 翻译</span>\n      </div>\n      {% if orig_body and translated_body %}\n      <div class="trans-body">{{ translated_body }}</div>\n      {% endif %}\n      {% if translated_tags %}\n      <div class="trans-tags">{{ translated_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if quote_info %}\n    <div class="quote-card">\n      <div class="quote-header">\n        <div class="quote-avatar">\n          {% if quote_info.avatar_src %}\n          <img src="{{ quote_info.avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ quote_info.author_initial }}\';" />\n          {% else %}\n          {{ quote_info.author_initial }}\n          {% endif %}\n        </div>\n        <span class="quote-author-name">{{ quote_info.author_name }}</span>\n        <span class="quote-author-handle">@{{ quote_info.username }}</span>\n      </div>\n      {% if quote_info.orig_body %}\n      <div class="quote-body">{{ quote_info.orig_body }}</div>\n      {% endif %}\n      {% if quote_info.orig_tags %}\n      <div class="quote-tags">{{ quote_info.orig_tags|join(\' \') }}</div>\n      {% endif %}\n      {% if quote_info.display_images %}\n      <div class="media-grid count-{{ quote_info.display_images|length if quote_info.display_images|length <= 4 else 4 }}">\n        {% for img_src in quote_info.display_images[:4] %}\n        <div class="media-item">\n          <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% endfor %}\n      </div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if display_images %}\n    <div class="media-grid count-{{ display_images|length if display_images|length <= 4 else 4 }}">\n      {% for img_src in display_images[:4] %}\n      <div class="media-item">\n        <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </div>\n      {% endfor %}\n    </div>\n    {% endif %}\n  </div>\n</body>\n</html>\n'
+TWEET_CARD_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Segoe UI Symbol", "Noto Sans Symbols 2", "Noto Sans CJK SC", "Microsoft YaHei", "Arial Unicode MS", sans-serif;\n    color: #0f172a;\n    -webkit-font-smoothing: antialiased;\n  }\n  .card {\n    width: 100%;\n    background: #ffffff;\n    padding: 28px 32px;\n  }\n  .retweet-banner {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    margin-bottom: 12px;\n    padding-left: 8px;\n    font-size: 13.5px;\n    font-weight: 700;\n    color: #059669;\n  }\n  .retweet-icon {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 20px;\n    height: 20px;\n    border-radius: 6px;\n    background: rgba(16, 185, 129, 0.12);\n    color: #059669;\n    font-size: 13px;\n    font-weight: 900;\n  }\n  .retweet-mini-avatar {\n    width: 20px;\n    height: 20px;\n    border-radius: 50%;\n    overflow: hidden;\n    background: #10b981;\n    flex-shrink: 0;\n    border: 1px solid #d1fae5;\n  }\n  .retweet-mini-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .header {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    margin-bottom: 16px;\n  }\n  .author-box {\n    display: flex;\n    align-items: center;\n    gap: 14px;\n  }\n  .avatar {\n    width: 52px;\n    height: 52px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 22px;\n    font-weight: 700;\n    overflow: hidden;\n    flex-shrink: 0;\n    border: 1px solid #e2e8f0;\n  }\n  .avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n  }\n  .author-meta {\n    display: flex;\n    flex-direction: column;\n    gap: 3px;\n  }\n  .author-name-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n  }\n  .author-name {\n    font-size: 19px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .verified-badge {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    width: 18px;\n    height: 18px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 11px;\n    font-weight: 900;\n  }\n  .author-sub {\n    font-size: 14px;\n    color: #64748b;\n    font-weight: 500;\n  }\n  .brand-logo {\n    width: 34px;\n    height: 34px;\n    border-radius: 9px;\n    background: #0f172a;\n    color: #ffffff;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    font-size: 19px;\n    font-weight: 900;\n  }\n  .tweet-section {\n    margin-bottom: 12px;\n  }\n  .tweet-body {\n    font-size: 18px;\n    line-height: 1.65;\n    color: #0f172a;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .tweet-tags {\n    margin-top: 4px;\n    font-size: 17px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .trans-section {\n    margin-top: 8px;\n    margin-bottom: 14px;\n    padding-top: 10px;\n    border-top: 1px solid #f1f5f9;\n  }\n  .trans-body {\n    font-size: 16.5px;\n    line-height: 1.65;\n    color: #334155;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .translation-label {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin-bottom: 6px;\n    color: #1d9bf0;\n    font-size: 14px;\n    font-weight: 500;\n    line-height: 20px;\n  }\n  .translation-label svg {\n    width: 17px;\n    height: 17px;\n    flex-shrink: 0;\n  }\n  .trans-tags {\n    margin-top: 4px;\n    font-size: 16.5px;\n    line-height: 1.6;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n  .media-grid {\n    display: grid;\n    gap: 10px;\n    margin-top: 12px;\n    border-radius: 16px;\n    overflow: hidden;\n  }\n  .media-grid.count-1 {\n    grid-template-columns: 1fr;\n  }\n  .media-grid.count-2, .media-grid.count-3, .media-grid.count-4 {\n    grid-template-columns: 1fr 1fr;\n  }\n  .media-item {\n    width: 100%;\n    overflow: hidden;\n    background: #f8fafc;\n    border-radius: 14px;\n    border: 1px solid #e2e8f0;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n  }\n  .media-grid.count-1 .media-item img {\n    width: 100%;\n    height: auto;\n    display: block;\n  }\n  .media-grid.count-2 .media-item img,\n  .media-grid.count-3 .media-item img,\n  .media-grid.count-4 .media-item img {\n    width: 100%;\n    height: 320px;\n    object-fit: cover;\n    display: block;\n  }\n  /* 引用转发 (Quote Tweet) 嵌套卡片样式 */\n  .quote-card {\n    margin-top: 14px;\n    border: 1.5px solid #cbd5e1;\n    border-radius: 16px;\n    background: #f8fafc;\n    padding: 16px 18px;\n    overflow: hidden;\n  }\n  .quote-header {\n    display: flex;\n    align-items: center;\n    gap: 9px;\n    margin-bottom: 8px;\n  }\n  .quote-avatar {\n    width: 26px;\n    height: 26px;\n    border-radius: 50%;\n    background: #1d9bf0;\n    color: #ffffff;\n    font-size: 13px;\n    font-weight: 700;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    overflow: hidden;\n    flex-shrink: 0;\n  }\n  .quote-avatar img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    display: block;\n  }\n  .quote-author-name {\n    font-size: 15px;\n    font-weight: 800;\n    color: #0f172a;\n  }\n  .quote-author-handle {\n    font-size: 13.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .quote-body {\n    font-size: 15.5px;\n    line-height: 1.58;\n    color: #1e293b;\n    white-space: pre-wrap;\n    word-break: break-word;\n  }\n  .quote-tags {\n    margin-top: 4px;\n    font-size: 15px;\n    line-height: 1.55;\n    color: #1d9bf0;\n    font-weight: 500;\n    word-break: break-word;\n  }\n</style>\n</head>\n<body>\n  <div class="card" id="tweet-card">\n    {% if is_retweet and retweeter_username %}\n    <div class="retweet-banner">\n      <span class="retweet-icon">↻</span>\n      {% if retweeter_avatar_src %}\n      <span class="retweet-mini-avatar">\n        <img src="{{ retweeter_avatar_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </span>\n      {% endif %}\n      <span>{{ retweeter_name }} (@{{ retweeter_username }}) 已转推</span>\n    </div>\n    {% endif %}\n\n    <div class="header">\n      <div class="author-box">\n        <div class="avatar">\n          {% if avatar_src %}\n          <img src="{{ avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ author_initial }}\';" />\n          {% else %}\n          {{ author_initial }}\n          {% endif %}\n        </div>\n        <div class="author-meta">\n          <div class="author-name-row">\n            <span class="author-name">{{ author_name }}</span>\n            <span class="verified-badge">✓</span>\n          </div>\n          <span class="author-sub">@{{ username }}{% if pub_date %} · {{ pub_date }}{% endif %}</span>\n        </div>\n      </div>\n      <div class="brand-logo">𝕏</div>\n    </div>\n\n    {% if orig_body or orig_tags %}\n    <div class="tweet-section">\n      {% if orig_body %}\n      <div class="tweet-body">{{ orig_body }}</div>\n      {% endif %}\n      {% if orig_tags %}\n      <div class="tweet-tags">{{ orig_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if (orig_body and translated_body) or translated_tags %}\n    <div class="trans-section">\n      <div class="translation-label">\n        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">\n          <path d="M3 5h12M9 3v2M5 5c.8 4 3.5 7.5 7 10M13 5c-.8 4-3.5 7.5-8 11M13 21l4.5-11L22 21M15 17h5" />\n        </svg>\n        <span>AI 翻译</span>\n      </div>\n      {% if orig_body and translated_body %}\n      <div class="trans-body">{{ translated_body }}</div>\n      {% endif %}\n      {% if translated_tags %}\n      <div class="trans-tags">{{ translated_tags|join(\' \') }}</div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if quote_info %}\n    <div class="quote-card">\n      <div class="quote-header">\n        <div class="quote-avatar">\n          {% if quote_info.avatar_src %}\n          <img src="{{ quote_info.avatar_src }}" onerror="this.style.display=\'none\';this.parentNode.innerText=\'{{ quote_info.author_initial }}\';" />\n          {% else %}\n          {{ quote_info.author_initial }}\n          {% endif %}\n        </div>\n        <span class="quote-author-name">{{ quote_info.author_name }}</span>\n        <span class="quote-author-handle">@{{ quote_info.username }}</span>\n      </div>\n      {% if quote_info.orig_body %}\n      <div class="quote-body">{{ quote_info.orig_body }}</div>\n      {% endif %}\n      {% if quote_info.orig_tags %}\n      <div class="quote-tags">{{ quote_info.orig_tags|join(\' \') }}</div>\n      {% endif %}\n      {% if quote_info.display_images %}\n      <div class="media-grid count-{{ quote_info.display_images|length if quote_info.display_images|length <= 4 else 4 }}">\n        {% for img_src in quote_info.display_images[:4] %}\n        <div class="media-item">\n          <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% endfor %}\n      </div>\n      {% endif %}\n    </div>\n    {% endif %}\n\n    {% if display_images %}\n    <div class="media-grid count-{{ display_images|length if display_images|length <= 4 else 4 }}">\n      {% for img_src in display_images[:4] %}\n      <div class="media-item">\n        <img src="{{ img_src }}" onerror="this.parentNode.style.display=\'none\';" />\n      </div>\n      {% endfor %}\n    </div>\n    {% endif %}\n  </div>\n</body>\n</html>\n'
 
 DAILY_DIGEST_TMPL = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n<style>\n  * {\n    box-sizing: border-box;\n    margin: 0;\n    padding: 0;\n  }\n  html {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #fefefe;\n  }\n  body {\n    width: 100%;\n    margin: 0;\n    padding: 0;\n    background: #ffffff;\n    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;\n    color: #181e29;\n    -webkit-font-smoothing: antialiased;\n  }\n  .digest-page {\n    width: 100%;\n    background: linear-gradient(\n      180deg,\n      rgba(var(--theme-rgb, 254, 228, 238), 0.62) 0%,\n      rgba(var(--theme-mid-rgb, 255, 255, 255), 0.28) 50%,\n      rgba(var(--theme-end-rgb, 235, 228, 255), 0.58) 100%\n    );\n    padding: 34px 36px 38px 36px;\n    position: relative;\n    overflow: hidden;\n  }\n  .page-deco-circle {\n    position: absolute;\n    top: -90px;\n    right: -70px;\n    width: 260px;\n    height: 260px;\n    border-radius: 50%;\n    background: radial-gradient(\n      circle,\n      rgba(var(--theme-accent-rgb, 112, 72, 232), 0.10) 0%,\n      rgba(var(--theme-accent-rgb, 112, 72, 232), 0) 70%\n    );\n    pointer-events: none;\n    z-index: 0;\n  }\n  .digest-header {\n    position: relative;\n    z-index: 2;\n    display: flex;\n    align-items: flex-end;\n    justify-content: space-between;\n    gap: 20px;\n  }\n  .header-left {\n    display: flex;\n    align-items: center;\n    gap: 16px;\n  }\n  .header-accent-bar {\n    width: 8px;\n    height: 46px;\n    border-radius: 99px;\n    background: linear-gradient(\n      180deg,\n      var(--theme-accent, #d6336c) 0%,\n      var(--theme-mid-accent, var(--theme-accent, #d6336c)) 100%\n    );\n    box-shadow: 0 4px 14px rgba(var(--theme-accent-rgb, 214, 51, 108), 0.30);\n    flex-shrink: 0;\n  }\n  .header-title-wrap {\n    display: flex;\n    flex-direction: column;\n    gap: 4px;\n  }\n  .header-title {\n    font-size: 32px;\n    font-weight: 900;\n    color: #141923;\n    letter-spacing: 1.5px;\n    line-height: 1.1;\n  }\n  .header-sub {\n    font-size: 11px;\n    font-weight: 800;\n    letter-spacing: 2.4px;\n    text-transform: uppercase;\n    color: var(--theme-accent, #7048e8);\n    opacity: 0.88;\n  }\n  .header-right {\n    display: flex;\n    flex-direction: column;\n    align-items: flex-end;\n    gap: 7px;\n  }\n  .date-badge {\n    background: rgba(var(--theme-rgb, 236, 229, 255), 0.95);\n    color: var(--theme-accent, #7048e8);\n    border: 1px solid var(--theme-border, #d0bfff);\n    padding: 5px 14px;\n    border-radius: 99px;\n    font-size: 12.5px;\n    font-weight: 800;\n    letter-spacing: 0.8px;\n  }\n  .stats-row {\n    display: flex;\n    align-items: center;\n    gap: 8px;\n    font-size: 12px;\n    font-weight: 600;\n    color: #64748b;\n  }\n  .stats-row strong {\n    color: #1e293b;\n    font-weight: 800;\n  }\n  .stats-dot {\n    width: 4px;\n    height: 4px;\n    border-radius: 50%;\n    background: var(--theme-accent, #7048e8);\n    opacity: 0.45;\n  }\n  .header-divider {\n    position: relative;\n    z-index: 2;\n    height: 2.5px;\n    margin: 20px 0 24px 0;\n    border-radius: 99px;\n    background: linear-gradient(\n      90deg,\n      var(--theme-accent, #d6336c) 0%,\n      var(--theme-mid-accent, var(--theme-border, #f9b8d4)) 45%,\n      rgba(var(--theme-end-accent-rgb, var(--theme-accent-rgb, 214, 51, 108)), 0.22) 100%\n    );\n  }\n  .digest-list {\n    position: relative;\n    z-index: 2;\n    display: flex;\n    flex-direction: column;\n    gap: 18px;\n  }\n  .news-card {\n    position: relative;\n    width: 100%;\n    border-radius: 22px;\n    overflow: hidden;\n    background: linear-gradient(\n      90deg,\n      rgb(var(--card-rgb)) 0%,\n      rgb(var(--card-soft-rgb)) 100%\n    );\n    border: 1.5px solid var(--card-border);\n    box-shadow:\n      0 10px 26px -10px rgba(var(--accent-rgb), 0.15),\n      inset 0 1px 0 rgba(255, 255, 255, 0.75);\n    display: flex;\n    align-items: stretch;\n  }\n  .news-card.has-image {\n    min-height: 178px;\n  }\n  .news-card.no-image {\n    min-height: 136px;\n  }\n  .card-accent-strip {\n    width: 6px;\n    background: var(--accent);\n    flex-shrink: 0;\n    z-index: 3;\n  }\n  .card-body {\n    position: relative;\n    z-index: 3;\n    display: flex;\n    flex-direction: column;\n    justify-content: center;\n  }\n  .news-card.has-image .card-body {\n    width: 64%;\n    padding: 22px 18px 22px 22px;\n  }\n  .news-card.no-image .card-body {\n    width: 100%;\n    padding: 22px 28px 22px 22px;\n  }\n  .card-meta {\n    display: flex;\n    align-items: center;\n    flex-wrap: wrap;\n    gap: 8px;\n    margin-bottom: 9px;\n  }\n  .card-num {\n    display: inline-flex;\n    align-items: center;\n    justify-content: center;\n    height: 22px;\n    padding: 0 9px;\n    border-radius: 99px;\n    background: var(--accent);\n    color: #ffffff;\n    font-size: 11.5px;\n    font-weight: 800;\n    letter-spacing: 0.6px;\n    box-shadow: 0 2px 6px rgba(var(--accent-rgb), 0.25);\n  }\n  .card-cat {\n    display: inline-flex;\n    align-items: center;\n    height: 22px;\n    padding: 0 10px;\n    border-radius: 99px;\n    background: var(--tag-bg);\n    color: var(--accent);\n    border: 1px solid rgba(var(--accent-rgb), 0.24);\n    font-size: 11.5px;\n    font-weight: 700;\n    letter-spacing: 0.3px;\n  }\n  .card-author {\n    font-size: 12.5px;\n    font-weight: 700;\n    color: #334155;\n  }\n  .card-time {\n    font-size: 11.5px;\n    font-weight: 500;\n    color: #64748b;\n  }\n  .card-title {\n    font-size: 19px;\n    font-weight: 850;\n    color: #141923;\n    line-height: 1.38;\n    margin-bottom: 7px;\n    letter-spacing: 0.2px;\n  }\n  .card-summary {\n    font-size: 14.5px;\n    font-weight: 500;\n    color: #2d3748;\n    line-height: 1.66;\n    word-break: break-word;\n  }\n  /* 使用 CSS mask-image 控制图片自身的 Alpha 透明度，从右向左逐渐透明融入卡片马卡龙底色，绝不发白、绝无接缝 */\n  .card-artwork {\n    position: absolute;\n    top: 0;\n    right: 0;\n    bottom: 0;\n    width: 58%;\n    z-index: 1;\n    overflow: hidden;\n    -webkit-mask-image: linear-gradient(\n      90deg,\n      rgba(0, 0, 0, 0) 0%,\n      rgba(0, 0, 0, 0.04) 12%,\n      rgba(0, 0, 0, 0.18) 28%,\n      rgba(0, 0, 0, 0.48) 48%,\n      rgba(0, 0, 0, 0.80) 68%,\n      rgba(0, 0, 0, 0.96) 85%,\n      rgba(0, 0, 0, 1) 100%\n    );\n    mask-image: linear-gradient(\n      90deg,\n      rgba(0, 0, 0, 0) 0%,\n      rgba(0, 0, 0, 0.04) 12%,\n      rgba(0, 0, 0, 0.18) 28%,\n      rgba(0, 0, 0, 0.48) 48%,\n      rgba(0, 0, 0, 0.80) 68%,\n      rgba(0, 0, 0, 0.96) 85%,\n      rgba(0, 0, 0, 1) 100%\n    );\n  }\n  .card-artwork img {\n    width: 100%;\n    height: 100%;\n    object-fit: cover;\n    object-position: center 20%;\n    display: block;\n  }\n  .card-watermark-num {\n    position: absolute;\n    right: 22px;\n    bottom: -10px;\n    font-size: 76px;\n    font-weight: 900;\n    line-height: 1;\n    letter-spacing: -2px;\n    color: rgba(var(--accent-rgb), 0.08);\n    pointer-events: none;\n    z-index: 1;\n    user-select: none;\n  }\n</style>\n</head>\n<body>\n  <div\n    class="digest-page"\n    style="\n      --theme-rgb: {{ theme.card_rgb }};\n      --theme-soft-rgb: {{ theme.card_soft_rgb }};\n      --theme-border: {{ theme.card_border }};\n      --theme-accent: {{ theme.accent }};\n      --theme-accent-rgb: {{ theme.accent_rgb }};\n      --theme-mid-rgb: {{ (theme_mid or theme).card_rgb }};\n      --theme-mid-accent: {{ (theme_mid or theme).accent }};\n      --theme-end-rgb: {{ (theme_end or theme).card_soft_rgb }};\n      --theme-end-accent-rgb: {{ (theme_end or theme).accent_rgb }};\n    "\n  >\n    <div class="page-deco-circle"></div>\n\n    <div class="digest-header">\n      <div class="header-left">\n        <div class="header-accent-bar"></div>\n        <div class="header-title-wrap">\n          <div class="header-title">今日要闻</div>\n          <div class="header-sub">DAILY CURATED BRIEFING</div>\n        </div>\n      </div>\n\n      <div class="header-right">\n        <div class="date-badge">{{ date_str }}</div>\n        <div class="stats-row">\n          <span>24H 收录 <strong>{{ total_count }}</strong></span>\n          <span class="stats-dot"></span>\n          <span>精选 <strong>{{ items|length }}</strong></span>\n          <span class="stats-dot"></span>\n          <span>订阅 <strong>{{ account_count }}</strong></span>\n        </div>\n      </div>\n    </div>\n\n    <div class="header-divider"></div>\n\n    <div class="digest-list">\n      {% for item in items %}\n      <div\n        class="news-card {% if item.thumb_src %}has-image{% else %}no-image{% endif %}"\n        style="\n          --card-rgb: {{ item.palette.card_rgb }};\n          --card-soft-rgb: {{ item.palette.card_soft_rgb }};\n          --card-border: {{ item.palette.card_border }};\n          --accent: {{ item.palette.accent }};\n          --accent-rgb: {{ item.palette.accent_rgb }};\n          --tag-bg: {{ item.palette.tag_bg }};\n        "\n      >\n        <div class="card-accent-strip"></div>\n\n        <div class="card-body">\n          <div class="card-meta">\n            <span class="card-num">{{ "%02d"|format(loop.index) }}</span>\n            <span class="card-cat">{{ item.category or "资讯速递" }}</span>\n            <span class="card-author">@{{ item.username }}{% if item.author_name and item.author_name != item.username %} · {{ item.author_name }}{% endif %}</span>\n            {% if item.pub_date %}\n            <span class="card-time">{{ item.pub_date }}</span>\n            {% endif %}\n          </div>\n          <div class="card-title">{{ item.title }}</div>\n          <div class="card-summary">{{ item.summary }}</div>\n        </div>\n\n        {% if item.thumb_src %}\n        <div class="card-artwork">\n          <img src="{{ item.thumb_src }}" onerror="this.parentNode.style.display=\'none\';" />\n        </div>\n        {% else %}\n        <div class="card-watermark-num">{{ "%02d"|format(loop.index) }}</div>\n        {% endif %}\n      </div>\n      {% endfor %}\n    </div>\n  </div>\n</body>\n</html>\n'
 
@@ -57,7 +57,7 @@ FALLBACK_SOURCE_TEMPLATES = [
 ]
 
 CONFIG_SECTIONS = {
-    "global_push_config": ("全局推送配置", ["default_push_image", "default_push_text", "skip_replies", "skip_retweets", "default_push_retweet", "default_push_reply"]),
+    "global_push_config": ("全局推送配置", ["default_push_image", "default_push_text", "skip_replies", "skip_retweets", "skip_quote_retweets", "default_push_retweet", "default_push_reply"]),
     "push_format_config": ("推送样式与链接", ["include_external_links", "push_send_mode", "enable_merge_forward_over_3", "merge_forward_image_threshold", "merge_forward_uin"]),
     "ai_config": ("AI 模型与筛选", ["text_provider_id", "vision_provider_id", "image_tweet_bypass_text_filter"]),
     "fetch_config": ("抓取与并发配置", ["poll_interval_minutes", "fetch_concurrency", "processing_concurrency", "request_interval_seconds", "first_run_mark_seen", "test_push_tweet_count"]),
@@ -1044,13 +1044,13 @@ class TwitterRssPlugin(Star):
 
     @classmethod
     def _format_override_summary(cls, ov_dict: dict[str, Any]) -> str:
-        """生成单账号已修改开关的简短中文摘要，如 '转贴:推送,纯文字:直接推送'"""
+        """生成单账号已修改开关的简短中文摘要，如 '转推:推送,纯文字:直接推送'"""
         if not isinstance(ov_dict, dict) or not ov_dict:
             return ""
-        label_map = {"retweet": "转贴", "reply": "回复", "text": "纯文字", "image": "图片"}
+        label_map = {"retweet": "转推", "quote_retweet": "引用转推", "reply": "回复", "text": "纯文字", "image": "图片"}
         mode_cn = {"direct": "直接推送", "push": "推送", "skip": "不推送"}
         parts: list[str] = []
-        for k in ("retweet", "reply", "text", "image"):
+        for k in ("retweet", "quote_retweet", "reply", "text", "image"):
             if k in ov_dict:
                 m = cls._parse_switch_mode(ov_dict.get(k))
                 if m in mode_cn:
@@ -1082,6 +1082,7 @@ class TwitterRssPlugin(Star):
         dirty = False
         key_map = {
             "retweet": "push_retweet",
+            "quote_retweet": "push_quote_retweet",
             "reply": "push_reply",
             "text": "push_text",
             "image": "push_image",
@@ -1124,7 +1125,7 @@ class TwitterRssPlugin(Star):
                 if legacy_ov:
                     overrides_map[acct_lower] = legacy_ov
                     dirty = True
-                for old_k in ("account", "push_retweet", "push_reply", "push_text", "push_image"):
+                for old_k in ("account", "push_retweet", "push_quote_retweet", "push_reply", "push_text", "push_image"):
                     if old_k in sw:
                         sw.pop(old_k, None)
                         dirty = True
@@ -1249,7 +1250,13 @@ class TwitterRssPlugin(Star):
                         "type": "object",
                         "items": {
                             "push_retweet": {
-                                "description": "转贴 (RT)",
+                                "description": "转推 (RT)",
+                                "type": "string",
+                                "options": ["默认", "推送", "直接推送", "不推送"],
+                                "default": "默认",
+                            },
+                            "push_quote_retweet": {
+                                "description": "引用转推",
                                 "type": "string",
                                 "options": ["默认", "推送", "直接推送", "不推送"],
                                 "default": "默认",
@@ -1387,7 +1394,7 @@ class TwitterRssPlugin(Star):
                                 summary = self._format_override_summary(overrides.get(account.lower(), {}))
                                 choice = f"{account} [已修改: {summary}]" if summary else account
                                 choices.append(choice)
-                                for key, label in (("push_retweet", "转贴 (RT)"), ("push_reply", "回复"), ("push_text", "纯文字"), ("push_image", "图片")):
+                                for key, label in (("push_retweet", "转推 (RT)"), ("push_quote_retweet", "引用转推"), ("push_reply", "回复"), ("push_text", "纯文字"), ("push_image", "图片")):
                                     fields[f"ov_{account}__{key}"] = {
                                         "description": label, "type": "string", "default": "默认",
                                         "options": ["默认", "推送", "直接推送", "不推送"],
@@ -2993,7 +3000,7 @@ class TwitterRssPlugin(Star):
     def _get_global_type_defaults(self, group_rule: dict[str, Any] | None = None) -> dict[str, bool]:
         """
         获取全局默认的 4 类推文推送开关：
-        - retweet (转贴): 默认由 default_push_retweet 或 (not skip_retweets) 决定
+        - retweet (转推): 默认由 default_push_retweet 或 (not skip_retweets) 决定
         - reply (回复): 默认由 default_push_reply 或 (not skip_replies) 决定
         - text (纯文字): 默认由 default_push_text 决定（默认 True）
         - image (图片): 默认由 default_push_image 决定（默认 True）
@@ -3008,6 +3015,8 @@ class TwitterRssPlugin(Star):
             )
             def_rt = not skip_rt
 
+        def_qrt = not bool(self._get_setting("skip_quote_retweets", True))
+
         if self._get_setting("default_push_reply") is not None:
             def_rep = bool(self._get_setting("default_push_reply", False))
         else:
@@ -3018,6 +3027,7 @@ class TwitterRssPlugin(Star):
 
         return {
             "retweet": def_rt,
+            "quote_retweet": def_qrt,
             "reply": def_rep,
             "text": def_text,
             "image": def_image,
@@ -3027,7 +3037,7 @@ class TwitterRssPlugin(Star):
         self, account: str, group_rule: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """
-        获取指定订阅账号在当前群聊下的 4 类推文（转贴/回复/纯文字/图片）推送策略：
+        获取指定订阅账号在当前群聊下的 5 类推文（转推/引用转推/回复/纯文字/图片）推送策略：
         - policy[k]: bool (是否允许进入推送流程)
         - policy['modes'][k]: 'push' | 'direct' | 'skip' ('direct' 表示不经过 AI 判断内容直接推送)
         - policy['sources'][k]: '单独设置' | '全局默认'
@@ -3035,10 +3045,11 @@ class TwitterRssPlugin(Star):
         defaults = self._get_global_type_defaults(group_rule)
         modes: dict[str, str] = {
             k: ("push" if defaults[k] else "skip")
-            for k in ("retweet", "reply", "text", "image")
+            for k in ("retweet", "quote_retweet", "reply", "text", "image")
         }
         sources: dict[str, str] = {
             "retweet": "全局默认",
+            "quote_retweet": "全局默认",
             "reply": "全局默认",
             "text": "全局默认",
             "image": "全局默认",
@@ -3049,6 +3060,7 @@ class TwitterRssPlugin(Star):
         if acct_lower and isinstance(group_rule, dict):
             key_map = {
                 "retweet": "push_retweet",
+                "quote_retweet": "push_quote_retweet",
                 "reply": "push_reply",
                 "text": "push_text",
                 "image": "push_image",
@@ -3058,7 +3070,7 @@ class TwitterRssPlugin(Star):
             if isinstance(overrides_map, dict):
                 acct_ov = overrides_map.get(acct_lower)
                 if isinstance(acct_ov, dict):
-                    for k_short in ("retweet", "reply", "text", "image"):
+                    for k_short in ("retweet", "quote_retweet", "reply", "text", "image"):
                         pm = self._parse_switch_mode(acct_ov.get(k_short))
                         if pm is not None:
                             modes[k_short] = pm
@@ -3084,6 +3096,7 @@ class TwitterRssPlugin(Star):
 
         return {
             "retweet": modes["retweet"] != "skip",
+            "quote_retweet": modes["quote_retweet"] != "skip",
             "reply": modes["reply"] != "skip",
             "text": modes["text"] != "skip",
             "image": modes["image"] != "skip",
@@ -3105,6 +3118,7 @@ class TwitterRssPlugin(Star):
         modes = policy.get("modes", {})
 
         text = str(tweet.get("text") or "").strip()
+        is_quote = bool(tweet.get("is_quote"))
         is_rt = bool(
             tweet.get("is_retweet")
             or re.match(r"^(?:RT|R\s+to|Retweet)\s+@", text, flags=re.I)
@@ -3122,6 +3136,8 @@ class TwitterRssPlugin(Star):
         if not has_images and isinstance(tweet.get("quote_info"), dict):
             has_images = bool(tweet["quote_info"].get("display_images"))
 
+        if is_quote and modes.get("quote_retweet") == "direct":
+            return True
         if is_rt and modes.get("retweet") == "direct":
             return True
         if is_rep and modes.get("reply") == "direct":
@@ -3151,6 +3167,7 @@ class TwitterRssPlugin(Star):
         policy = self._get_account_type_policy(acct, group_rule)
 
         text = str(tweet.get("text") or "").strip()
+        is_quote = bool(tweet.get("is_quote"))
         is_rt = bool(
             tweet.get("is_retweet")
             or re.match(r"^(?:RT|R\s+to|Retweet)\s+@", text, flags=re.I)
@@ -3160,7 +3177,9 @@ class TwitterRssPlugin(Star):
             or re.match(r"^(?:Re\s+@|@)", text, flags=re.I)
         )
 
-        # 1. 转贴 (Retweet) 开关判断
+        # 1. 引用转推与转推开关分别判断
+        if is_quote and not policy["quote_retweet"]:
+            return True
         if is_rt and not policy["retweet"]:
             return True
 
@@ -3182,7 +3201,7 @@ class TwitterRssPlugin(Star):
             if isinstance(qd_media, dict) and (qd_media.get("photos") or qd_media.get("all")):
                 has_images = True
 
-        # 若是尚未拉取原推详情的转贴（且该账号允许推送转贴），留到 _prepare_tweet_media 展开原推后再判断是否有图
+        # 若是尚未拉取原推详情的转推（且该账号允许推送转推），留到 _prepare_tweet_media 展开原推后再判断是否有图
         if is_rt and not media_prepared and not has_images and tweet.get("rt_status_id"):
             return False
 
@@ -3646,7 +3665,7 @@ class TwitterRssPlugin(Star):
         """针对单个群聊的独立规则评估推文是否值得推送"""
         if self._should_skip_tweet(prepared_tweet, group_rule, media_prepared=True):
             logger.info(
-                f"[TwitterRSS] 推文 {prepared_tweet.get('id')} (@{prepared_tweet.get('username')}) 命中推文类型过滤开关（转贴/回复/纯文字/图片），已按配置自动跳过。"
+                f"[TwitterRSS] 推文 {prepared_tweet.get('id')} (@{prepared_tweet.get('username')}) 命中推文类型过滤开关（转推/引用转推/回复/纯文字/图片），已按配置自动跳过。"
             )
             return False, prepared_tweet
 
@@ -3782,10 +3801,32 @@ class TwitterRssPlugin(Star):
         except (OSError, ValueError, SyntaxError) as exc:
             raise ValueError("渲染服务未返回有效图片（可能返回了 Internal Server Error）") from exc
 
+    @staticmethod
+    def _render_font_css() -> str:
+        """Embed licensed fallback fonts so remote renderers preserve Unicode styling."""
+        font_dir = pathlib.Path(__file__).resolve().parent / "fonts"
+        faces = []
+        for filename, family, codepoints in (
+            ("NotoSans-Regular.woff2", "Twitter Unicode", "U+00A0-036F"),
+            ("NotoSansMath-Regular.woff2", "Twitter Math", "U+2000-2BFF,U+1D400-1D7FF"),
+        ):
+            encoded = base64.b64encode((font_dir / filename).read_bytes()).decode("ascii")
+            faces.append(
+                f'@font-face {{ font-family: "{family}"; '
+                f'src: url("data:font/woff2;base64,{encoded}") format("woff2"); '
+                f'font-weight: normal; font-style: normal; font-display: block; unicode-range: {codepoints}; }}'
+            )
+        faces.append('body { font-family: "Twitter Unicode", "Twitter Math", -apple-system, '
+                     'BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", '
+                     '"Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }')
+        return "\n".join(faces)
+
     async def _render_html_to_image(
         self, template_str: str, render_data: dict[str, Any]
     ) -> str:
         options = {"full_page": True, "type": "png", "scale": "device"}
+        font_css = await asyncio.to_thread(self._render_font_css)
+        template_str = template_str.replace("</head>", f"<style>{font_css}</style></head>", 1)
         for attempt in range(2):
             try:
                 try:
@@ -4763,7 +4804,7 @@ class TwitterRssPlugin(Star):
         pol = self._get_account_type_policy(clean_a, rule)
         srcs = pol.get("sources", {})
         modes = pol.get("modes", {})
-        label_map = {"retweet": "转贴", "reply": "回复", "text": "纯文字", "image": "图片"}
+        label_map = {"retweet": "转推", "quote_retweet": "引用转推", "reply": "回复", "text": "纯文字", "image": "图片"}
         mode_short = {"direct": "直推", "push": "开", "skip": "关"}
         custom_parts: list[str] = []
         for k, cn in label_map.items():
@@ -4793,11 +4834,12 @@ class TwitterRssPlugin(Star):
             f"• 本群订阅账号 ({len(accounts)}): {', '.join(formatted_accounts) if formatted_accounts else '暂无 (发送 /tw add <账号> 添加)'}\n"
             f"• 本群订阅标签 ({len(hashtags)}): {', '.join('#' + tag for tag in hashtags) if hashtags else '暂无 (发送 /tw tag_add <标签> 添加)'}\n"
             f"• 全局默认推文类型开关: "
-            f"转贴={'推送' if g_defs['retweet'] else '跳过'} | "
+            f"转推={'推送' if g_defs['retweet'] else '跳过'} | "
+            f"引用转推={'推送' if g_defs['quote_retweet'] else '跳过'} | "
             f"回复={'推送' if g_defs['reply'] else '跳过'} | "
             f"纯文字={'推送' if g_defs['text'] else '跳过'} | "
             f"图片={'推送' if g_defs['image'] else '跳过'}\n"
-            f"  (发送 `/tw set <账号> <转贴|回复|纯文字|图片> <开启|关闭|默认>` 可为单个账号独立设置)\n"
+            f"  (发送 `/tw set <账号> <转推|引用转推|回复|纯文字|图片> <开启|关闭|默认>` 可为单个账号独立设置)\n"
             f"• 本群视觉标签过滤: {'开启' if rule.get('enable_vision_tag_filter', True) else '关闭'}\n"
             f"  - 必须包含标签 (全部命中): {', '.join(must_tags) if must_tags else '不限'}\n"
             f"  - 其他任意标签 (命中1条即可): {', '.join(any_tags) if any_tags else '不限'}\n"
@@ -4819,10 +4861,10 @@ class TwitterRssPlugin(Star):
         state_str: str = "",
     ):
         """
-        为单个订阅账号独立设置是否推送【转贴 / 回复 / 纯文字 / 图片】四类推文（未单独配置则跟随全局默认）：
+        为单个订阅账号独立设置是否推送【转推 / 引用转推 / 回复 / 纯文字 / 图片】四类推文（未单独配置则跟随全局默认）：
         用法示例：
         - /tw set ProjMoonStudio             (查看该账号当前的四类推文推送设置)
-        - /tw set ProjMoonStudio 转贴 开启    (单独允许推送该账号的转贴)
+        - /tw set ProjMoonStudio 转推 开启    (单独允许推送该账号的转推)
         - /tw set ProjMoonStudio 纯文字 关闭  (单独关闭该账号的纯文字推文，仅看带图推文)
         - /tw set ProjMoonStudio 回复 开启    (单独允许推送该账号的回复推文)
         - /tw set ProjMoonStudio 图片 开启    (单独开启该账号的图片推文推送)
@@ -4837,7 +4879,7 @@ class TwitterRssPlugin(Star):
             yield event.plain_result(
                 "请提供要查看或设置的推特账号名，例如：\n"
                 "• 查看账号设置：`/tw set ProjMoonStudio`\n"
-                "• 单独开启转贴：`/tw set ProjMoonStudio 转贴 开启`\n"
+                "• 单独开启转推：`/tw set ProjMoonStudio 转推 开启`\n"
                 "• 单独关闭纯文字：`/tw set ProjMoonStudio 纯文字 关闭`\n"
                 "• 恢复全局默认：`/tw set ProjMoonStudio 全部 默认`"
             )
@@ -4852,6 +4894,8 @@ class TwitterRssPlugin(Star):
             "转发": "retweet",
             "rt": "retweet",
             "retweet": "retweet",
+            "引用转推": "quote_retweet",
+            "quote": "quote_retweet",
             "回复": "reply",
             "评论": "reply",
             "reply": "reply",
@@ -4869,9 +4913,10 @@ class TwitterRssPlugin(Star):
             "all": "all",
             "reset": "all",
         }
-        cn_label = {"retweet": "转贴", "reply": "回复", "text": "纯文字", "image": "图片"}
+        cn_label = {"retweet": "转推", "quote_retweet": "引用转推", "reply": "回复", "text": "纯文字", "image": "图片"}
         cfg_field_map = {
             "retweet": "push_retweet",
+            "quote_retweet": "push_quote_retweet",
             "reply": "push_reply",
             "text": "push_text",
             "image": "push_image",
@@ -4888,11 +4933,12 @@ class TwitterRssPlugin(Star):
             modes = pol.get("modes", {})
             yield event.plain_result(
                 f"⚙️ 账号 @{acct} 在本群【{rule.get('group_name')}】的推文类型推送策略：\n"
-                f"• 转贴 (retweet): {mode_desc.get(modes.get('retweet', 'skip'))} （{srcs['retweet']}）\n"
+                f"• 转推 (retweet): {mode_desc.get(modes.get('retweet', 'skip'))} （{srcs['retweet']}）\n"
+                f"• 引用转推: {mode_desc.get(modes.get('quote_retweet', 'skip'))} （{srcs['quote_retweet']}）\n"
                 f"• 回复 (reply): {mode_desc.get(modes.get('reply', 'skip'))} （{srcs['reply']}）\n"
                 f"• 纯文字 (text): {mode_desc.get(modes.get('text', 'push'))} （{srcs['text']}）\n"
                 f"• 图片 (image): {mode_desc.get(modes.get('image', 'push'))} （{srcs['image']}）\n\n"
-                f"💡 修改示例：`/tw set {acct} <转贴|回复|纯文字|图片|全部> <直接推送|推送|不推送|默认>`"
+                f"💡 修改示例：`/tw set {acct} <转推|引用转推|回复|纯文字|图片|全部> <直接推送|推送|不推送|默认>`"
             )
             return
 
@@ -4900,7 +4946,7 @@ class TwitterRssPlugin(Star):
         if not t_key:
             yield event.plain_result(
                 f"⚠️ 未知的推文类型：{tweet_type}\n"
-                f"支持的类型：`转贴`、`回复`、`纯文字`、`图片`、`全部`"
+                f"支持的类型：`转推`、`引用转推`、`回复`、`纯文字`、`图片`、`全部`"
             )
             return
 
@@ -4918,7 +4964,7 @@ class TwitterRssPlugin(Star):
             )
             return
 
-        target_keys = ["retweet", "reply", "text", "image"] if t_key == "all" else [t_key]
+        target_keys = ["retweet", "quote_retweet", "reply", "text", "image"] if t_key == "all" else [t_key]
 
         # 1. 更新本群 rule["account_type_overrides"]（支持本群对多个不同订阅账号分别保存独立开关）
         overrides_map = rule.setdefault("account_type_overrides", {})
@@ -4950,7 +4996,8 @@ class TwitterRssPlugin(Star):
         modes = pol.get("modes", {})
         yield event.plain_result(
             f"✅ 已更新账号 @{acct} 在本群【{rule.get('group_name')}】的推文类型开关！\n"
-            f"• 转贴 (retweet): {mode_desc.get(modes.get('retweet', 'skip'))} （{srcs['retweet']}）\n"
+            f"• 转推 (retweet): {mode_desc.get(modes.get('retweet', 'skip'))} （{srcs['retweet']}）\n"
+            f"• 引用转推: {mode_desc.get(modes.get('quote_retweet', 'skip'))} （{srcs['quote_retweet']}）\n"
             f"• 回复 (reply): {mode_desc.get(modes.get('reply', 'skip'))} （{srcs['reply']}）\n"
             f"• 纯文字 (text): {mode_desc.get(modes.get('text', 'push'))} （{srcs['text']}）\n"
             f"• 图片 (image): {mode_desc.get(modes.get('image', 'push'))} （{srcs['image']}）"
