@@ -23,7 +23,7 @@ import shutil
 import time
 import xml.etree.ElementTree as ET
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -2732,6 +2732,45 @@ class TwitterRssPlugin(Star):
         return body_cleaned, tags
 
     @staticmethod
+    def _prefer_original_image_url(url: str) -> str:
+        """将 Twitter 图片地址升级为原图规格；代理源地址保持不变。"""
+        value = str(url or "").strip()
+        if not value:
+            return value
+        parsed = urlsplit(value)
+        host = (parsed.hostname or "").lower()
+        if host != "pbs.twimg.com":
+            return value
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        # Twitter 媒体规格参数；保留 format 等其它参数。
+        query["name"] = ["orig"]
+        query.pop("w", None)
+        query.pop("h", None)
+        encoded = urlencode(query, doseq=True)
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, encoded, parsed.fragment))
+
+    @staticmethod
+    def _save_original_image_bytes_sync(raw_bytes: bytes, out_stem: pathlib.Path) -> tuple[pathlib.Path, str] | None:
+        """校验并尽量原样保存 JPEG/PNG/GIF，避免不必要的二次压缩。"""
+        if not raw_bytes or len(raw_bytes) < 64:
+            return None
+        try:
+            from PIL import Image
+            with Image.open(io.BytesIO(raw_bytes)) as im:
+                fmt = (im.format or "").upper()
+                if fmt not in ("JPEG", "PNG", "GIF"):
+                    return None
+                if max(im.size) > 8192:
+                    return None
+                suffix = {"JPEG": ".jpg", "PNG": ".png", "GIF": ".gif"}[fmt]
+                out_path = out_stem.with_suffix(suffix)
+                out_path.write_bytes(raw_bytes)
+                mime = {"JPEG": "image/jpeg", "PNG": "image/png", "GIF": "image/gif"}[fmt]
+                return out_path, f"data:{mime};base64,{base64.b64encode(raw_bytes).decode('ascii')}"
+        except Exception:
+            return None
+
+    @staticmethod
     def _normalize_image_bytes_sync(raw_bytes: bytes, out_stem: pathlib.Path) -> tuple[pathlib.Path, str] | None:
         """
         使用 Pillow 校验并将任何 WebP / 16-bit / CMYK / 非标图片统一转换为 QQ 官方接口 (qq_official) 100% 支持的标准 8-bit RGB JPEG 或 PNG，
@@ -2750,8 +2789,8 @@ class TwitterRssPlugin(Star):
                     b64 = base64.b64encode(raw_bytes).decode("ascii")
                     return out_path, f"data:image/gif;base64,{b64}"
 
-                # 限制最大边长不超过 2560，防止超大原图超出 QQ 官方富媒体大小限制
-                max_side = 2560
+                # 仅对需要转码的格式限制尺寸；可直接发送的 JPEG/PNG/GIF 已在下载入口保留原图。
+                max_side = 8192
                 w, h = im.size
                 if w > max_side or h > max_side:
                     scale = max_side / float(max(w, h))
@@ -2885,9 +2924,11 @@ class TwitterRssPlugin(Star):
         if not self.http_client or self.http_client.is_closed:
             await self._init_http_client()
 
-        # 将 pbs.twimg.com 链接中的 format=webp 自动替换为 format=jpg
-        fetch_url = re.sub(r"([?&]format=)webp\b", r"\1jpg", url, flags=re.I)
-        url_hash = hashlib.md5(url.encode("utf-8")).hexdigest()
+        # Twitter 原图优先；Nitter/RSSHub 等代理地址保持原样。
+        fetch_url = self._prefer_original_image_url(url)
+        # 原图常见为 WebP 时改为 JPG，便于 QQ 官方接口兼容。
+        fetch_url = re.sub(r"([?&]format=)webp\b", r"\1jpg", fetch_url, flags=re.I)
+        url_hash = hashlib.md5(fetch_url.encode("utf-8")).hexdigest()
         out_stem = self.image_cache_dir / url_hash
 
         existing = [
@@ -2916,8 +2957,12 @@ class TwitterRssPlugin(Star):
             resp.raise_for_status()
             content_bytes = resp.content
             norm_res = await asyncio.to_thread(
-                self._normalize_image_bytes_sync, content_bytes, out_stem
+                self._save_original_image_bytes_sync, content_bytes, out_stem
             )
+            if not norm_res:
+                norm_res = await asyncio.to_thread(
+                    self._normalize_image_bytes_sync, content_bytes, out_stem
+                )
             if not norm_res:
                 logger.warning(f"[TwitterRSS] 忽略不支持或损坏的媒体文件 ({url})")
                 return None, None
@@ -3872,6 +3917,19 @@ class TwitterRssPlugin(Star):
             len(raw_images) > merge_threshold or total_img_count > merge_threshold
         )
 
+        # 分条发送时记录已经成功发送的部分，失败重试只补发未完成部分。
+        progress_map = self.state.setdefault("delivery_progress", {})
+        progress_key = f"{umo}::{enriched_tweet.get('id') or enriched_tweet.get('link') or ''}"
+        progress = progress_map.setdefault(progress_key, {"card": False, "images": []})
+        if not isinstance(progress, dict):
+            progress = {"card": False, "images": []}
+            progress_map[progress_key] = progress
+        sent_image_indexes = {int(i) for i in (progress.get("images") or []) if str(i).isdigit()}
+
+        async def finish_delivery():
+            progress_map.pop(progress_key, None)
+            await self._save_state()
+
         try:
             if use_merge_forward:
                 sender_name = f"{author_name} (@{enriched_tweet.get('username', 'X')})"
@@ -3916,6 +3974,7 @@ class TwitterRssPlugin(Star):
                             else forward_comp
                         )
                         await self.context.send_message(umo, MessageChain(chain_items))
+                        await finish_delivery()
                         return
                     except Exception as fwd_err:
                         logger.warning(
@@ -3928,6 +3987,7 @@ class TwitterRssPlugin(Star):
                     chain_comps.append(self._make_image_comp(raw_img))
                 chain_comps.extend(link_components)
                 await self.context.send_message(umo, MessageChain(chain_comps))
+                await finish_delivery()
                 return
 
             if send_mode == "single_chain":
@@ -3936,18 +3996,25 @@ class TwitterRssPlugin(Star):
                     chain_comps.append(self._make_image_comp(raw_img))
                 chain_comps.extend(link_components)
                 await self.context.send_message(umo, MessageChain(chain_comps))
+                await finish_delivery()
             else:
-                await self.context.send_message(
-                    umo, MessageChain([self._make_image_comp(rendered_card_path)] + link_components)
-                )
-                for raw_img in raw_images:
+                if not progress.get("card"):
+                    await self.context.send_message(
+                        umo, MessageChain([self._make_image_comp(rendered_card_path)] + link_components)
+                    )
+                    progress["card"] = True
+                    await self._save_state()
+                for image_index, raw_img in enumerate(raw_images):
+                    if image_index in sent_image_indexes:
+                        continue
                     await asyncio.sleep(0.6)
-                    try:
-                        await self.context.send_message(
-                            umo, MessageChain([self._make_image_comp(raw_img)])
-                        )
-                    except Exception as img_err:
-                        logger.warning(f"[TwitterRSS] 发送单张原图 ({raw_img}) 失败，已跳过该原图: {img_err}")
+                    await self.context.send_message(
+                        umo, MessageChain([self._make_image_comp(raw_img)])
+                    )
+                    sent_image_indexes.add(image_index)
+                    progress["images"] = sorted(sent_image_indexes)
+                    await self._save_state()
+                await finish_delivery()
             logger.info(
                 f"[TwitterRSS] 已向群聊 {umo} 推送推文 @{enriched_tweet.get('username')} ({enriched_tweet.get('id')})，附带原图 {len(raw_images)} 张"
             )
@@ -5169,3 +5236,5 @@ class TwitterRssPlugin(Star):
                 f"• 清理本地缓存图片: {res['removed_files']} 个（释放空间 {res['freed_mb']} MB）\n"
                 f"💡 历史《今日要闻》日报归档与订阅配置已保留（如需连同历史日报归档一并清空，可发送 `/tw clear all` 或 `/tw clear archive`）。"
             )
+
+
