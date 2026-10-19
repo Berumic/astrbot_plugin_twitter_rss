@@ -17,7 +17,7 @@ AstrBot 的 Twitter / X 订阅插件：按群订阅账号与话题标签，通�
 3. 在目标群发送 `/tw sub 群备注名`，再用 `/tw add 账号` 或 `/tw tag_add 标签` 添加订阅。
 4. 使用 `/tw list` 查看配置，使用 `/tw test 2` 测试本群随机两个订阅。
 
-也可将插件解压到 AstrBot 的 `data/plugins/astrbot_plugin_twitter_rss` 目录。插件根目录须包含 `metadata.yaml`、`main.py`、`_conf_schema.json`、`requirements.txt` 、`fonts/` 字体目录及模板文件；`tests/` 无需打包。配置保存后重载插件生效。
+也可将插件解压到 AstrBot 的 `data/plugins/astrbot_plugin_twitter_rss` 目录。插件根目录须包含 `metadata.yaml`、`main.py`、`furigana.py`、`_conf_schema.json`、`requirements.txt` 、`fonts/` 字体目录及模板文件；`tests/` 无需打包。配置保存后重载插件生效。
 
 ## 配置
 
@@ -34,6 +34,8 @@ AstrBot 的 Twitter / X 订阅插件：按群订阅账号与话题标签，通�
 **独立推送开关**：选择账号或 `#标签`，分别设置转推（RT）、引用转推、回复、纯文字、图片五项策略。每项提供「默认 / 推送 / 直接推送 / 不推送」；「推送」继续经过 AI 筛选，「直接推送」跳过 AI 内容审核。切换账号会保留选择，保存并重载后显示修改标记。
 
 **图片筛选**：必须包含标签须全部命中；任意包含标签须至少命中一项；排除标签命中任意一项即拦截。话题标签订阅与这些视觉标签是两种不同功能。
+
+**日语假名注音**：在「推送样式与链接」中开关，默认开启。在日语原文与引用推文的汉字上方显示小号平假名，正文和话题标签均支持；中文译文保持不变。本地词典生成，不额外调用 AI；人名、多音字等读音可能有误。纯汉字且无假名的内容不自动注音，避免将中文按日语标注。
 
 **代理**：可填写 `127.0.0.1:7890` 或完整的 `http://127.0.0.1:7890`；支持 HTTPS、SOCKS5（需安装 `socksio`）。留空不指定代理。
 

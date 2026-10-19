@@ -13,6 +13,7 @@ import time
 from types import SimpleNamespace
 import unittest
 import httpx
+from furigana import annotate_original
 from unittest.mock import AsyncMock, Mock, patch
 
 
@@ -23,7 +24,7 @@ def load_plugin_methods():
         "_get_rule_accounts", "_get_rule_hashtags", "_tweet_identity", "_resolve_target_umo",
         "_record_event_umo", "_find_or_create_group_rule", "check_all_accounts",
         "test_push_for_group", "tw_test", "tw_check", "run_daily_digest", "_matches_rule_subscription",
-        "_render_font_css", "push_tweet_to_umo",
+        "_render_font_css", "push_tweet_to_umo", "_send_to_umo",
         "_validate_rendered_image_sync", "_render_html_to_image", "_http_get_with_recovery",
         "_init_http_client", "_normalize_proxy_url", "_fetch_feed_response", "_feed_host",
         "_feed_hosts", "_cool_down_feed",
@@ -40,6 +41,7 @@ def load_plugin_methods():
     module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
                              ast.ClassDef(name="Plugin", bases=[], keywords=[], body=methods, decorator_list=[])], type_ignores=[])
     namespace = dict(asyncio=asyncio, copy=copy, random=random, re=re, base64=base64, httpx=httpx,
+                     annotate_original=annotate_original,
                      __file__=str(Path(__file__).resolve().parents[1] / "main.py"),
                      TWEET_CARD_TMPL="tweet-template",
                      time=time, datetime=datetime, pathlib=pathlib,
@@ -252,8 +254,8 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_digest_renders_archives_and_sends_local_subscription_count(self):
         p = self.plugin
-        p.history_tweets = [dict(id="1", username="alice", timestamp=time.time(), text="new work"),
-                            dict(id="2", username="foreign", timestamp=time.time(), text="other group")]
+        p.history_tweets = [dict(id="1", username="alice", timestamp=time.time()-60, text="new work"),
+                            dict(id="2", username="foreign", timestamp=time.time()-60, text="other group")]
         p._call_llm = AsyncMock(return_value="result")
         p._extract_json_dict = Mock(return_value={"items": [{"tweet_index": 0, "title": "new work", "summary": "summary"}]})
         p._render_html_to_image = AsyncMock(return_value="digest.png")
@@ -312,6 +314,35 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
         for field in ("orig_body", "translated_body", "author_name", "quote_info"):
             self.assertEqual(payload[field], tweet[field])
         self.assertEqual(tweet, before)
+
+    async def test_proactive_send_marks_qq_group_scene_and_rejects_false_result(self):
+        p = self.plugin
+        platform = Mock()
+        platform.meta.return_value.id = "default_1905597608"
+        platform.remember_session_scene = Mock()
+        platform._allow_group_proactive_send = False
+        p.context = SimpleNamespace(
+            platform_manager=SimpleNamespace(platform_insts=[platform]),
+            send_message=AsyncMock(return_value=True),
+        )
+        umo = "default_1905597608:GroupMessage:0BE46DBF041818B40E1B0CDAFDC67BA0"
+        self.assertTrue(await p._send_to_umo(umo, "chain"))
+        platform.remember_session_scene.assert_called_once_with(umo.rsplit(":", 1)[-1], "group")
+        self.assertTrue(platform._allow_group_proactive_send)
+        p.context.send_message.return_value = False
+        with self.assertRaisesRegex(RuntimeError, "消息未发送"):
+            await p._send_to_umo(umo, "chain")
+
+    async def test_furigana_setting_controls_actual_render_payload(self):
+        tweet = dict(orig_body="明日は学校へ行きます。", translated_body="明天去学校。")
+        self.plugin._render_html_to_image = AsyncMock(side_effect=RuntimeError("stop before send"))
+        for enabled in (True, False):
+            self.plugin.config["push_format_config"] = {"enable_japanese_furigana": enabled}
+            with self.assertRaisesRegex(RuntimeError, "stop before send"):
+                await Plugin.push_tweet_to_umo(self.plugin, tweet, self.rule["target_umo"])
+            payload = self.plugin._render_html_to_image.await_args.args[1]
+            self.assertEqual("orig_body_ruby" in payload, enabled)
+            self.assertEqual(payload["translated_body"], tweet["translated_body"])
 
 
 if __name__ == "__main__":

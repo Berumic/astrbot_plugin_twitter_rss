@@ -164,6 +164,16 @@
     padding-top: 10px;
     border-top: 1px solid #f1f5f9;
   }
+  ruby { ruby-position: over; ruby-align: center; }
+  ruby rt {
+    font-size: 0.52em;
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: 0;
+    color: #64748b;
+  }
+  .tweet-tags ruby rt, .quote-tags ruby rt { color: #1d9bf0; }
+  .has-furigana { line-height: 2.05; }
   .trans-body {
     font-size: 16.5px;
     line-height: 1.65;
@@ -329,10 +339,10 @@
     {% if orig_body or orig_tags %}
     <div class="tweet-section">
       {% if orig_body %}
-      <div class="tweet-body">{{ orig_body }}</div>
+      <div class="tweet-body{% if '<ruby>' in orig_body_ruby|default('') %} has-furigana{% endif %}">{% if orig_body_ruby is defined %}{{ orig_body_ruby|safe }}{% else %}{{ orig_body|e }}{% endif %}</div>
       {% endif %}
       {% if orig_tags %}
-      <div class="tweet-tags">{{ orig_tags|join(' ') }}</div>
+      <div class="tweet-tags{% if '<ruby>' in orig_tags_ruby|default('') %} has-furigana{% endif %}">{% if orig_tags_ruby is defined %}{{ orig_tags_ruby|safe }}{% else %}{{ orig_tags|join(' ')|e }}{% endif %}</div>
       {% endif %}
     </div>
     {% endif %}
@@ -368,10 +378,10 @@
         <span class="quote-author-handle">@{{ quote_info.username }}</span>
       </div>
       {% if quote_info.orig_body %}
-      <div class="quote-body">{{ quote_info.orig_body }}</div>
+      <div class="quote-body{% if '<ruby>' in quote_info.orig_body_ruby|default('') %} has-furigana{% endif %}">{% if quote_info.orig_body_ruby is defined %}{{ quote_info.orig_body_ruby|safe }}{% else %}{{ quote_info.orig_body|e }}{% endif %}</div>
       {% endif %}
       {% if quote_info.orig_tags %}
-      <div class="quote-tags">{{ quote_info.orig_tags|join(' ') }}</div>
+      <div class="quote-tags{% if '<ruby>' in quote_info.orig_tags_ruby|default('') %} has-furigana{% endif %}">{% if quote_info.orig_tags_ruby is defined %}{{ quote_info.orig_tags_ruby|safe }}{% else %}{{ quote_info.orig_tags|join(' ')|e }}{% endif %}</div>
       {% endif %}
       {% if quote_info.display_images %}
       <div class="media-grid count-{{ quote_info.display_images|length if quote_info.display_images|length <= 4 else 4 }}">
