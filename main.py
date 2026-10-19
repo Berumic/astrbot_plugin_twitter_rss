@@ -2744,13 +2744,13 @@ class TwitterRssPlugin(Star):
 
     @staticmethod
     def _prefer_original_image_url(url: str) -> str:
-        """将 Twitter 图片地址升级为原图规格；代理源地址保持不变。"""
+        """仅将 Twitter /media/ 图片升级为原图规格；头像及代理地址保持不变。"""
         value = str(url or "").strip()
         if not value:
             return value
         parsed = urlsplit(value)
         host = (parsed.hostname or "").lower()
-        if host != "pbs.twimg.com":
+        if host != "pbs.twimg.com" or not parsed.path.startswith("/media/"):
             return value
         query = parse_qs(parsed.query, keep_blank_values=True)
         # Twitter 媒体规格参数；保留 format 等其它参数。
