@@ -20,6 +20,30 @@ class FuriganaTests(unittest.TestCase):
         self.assertIn("<rt>がっこう</rt>", result)
         self.assertEqual(visible_original(result), "食べる、学校へ行きます。")
 
+    def test_switch_between_hiragana_and_romaji_without_changing_original(self):
+        text = "食べる、学校へ行きます。\nhttps://example.org/作品?q=漢字&v=1"
+        kana = ruby_text(text)
+        romaji = ruby_text(text, style="罗马音")
+        self.assertIn("<rt>がっこう</rt>", kana)
+        self.assertIn("<rt>gakkou</rt>", romaji)
+        self.assertIn("<ruby>食<rp>(</rp><rt>ta</rt><rp>)</rp></ruby>べる", romaji)
+        self.assertEqual(visible_original(romaji), text)
+        self.assertEqual(ruby_text(text), kana)
+        self.assertEqual(ruby_text(text, style="unknown"), kana)
+
+    def test_romaji_applies_to_body_tags_and_quote_only(self):
+        data = dict(orig_body="学校へ行きます。", orig_tags=["#学校"],
+                    translated_body="去学校。", translated_tags=["#学校"],
+                    quote_info={"orig_body": "学校へ行きます。", "orig_tags": ["#学校"]})
+        before = copy.deepcopy(data)
+        result = annotate_original(data, style="罗马音")
+        for block in (result, result["quote_info"]):
+            for key in ("orig_body_ruby", "orig_tags_ruby"):
+                self.assertIn("<rt>gakkou</rt>", block[key])
+        self.assertEqual(result["translated_body"], data["translated_body"])
+        self.assertEqual(result["translated_tags"], data["translated_tags"])
+        self.assertEqual(data, before)
+
     def test_styled_characters_and_urls_are_preserved(self):
         text = "ʕ̢·͡˔·Ɂ̡̣ ⋈ 𝙉𝙚𝙬 𝘼𝙡𝙗𝙪𝙢 ⋈ 日本の音楽です。\nhttps://example.org/作品?q=漢字&v=1"
         result = ruby_text(text)

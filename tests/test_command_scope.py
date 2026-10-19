@@ -336,13 +336,18 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
     async def test_furigana_setting_controls_actual_render_payload(self):
         tweet = dict(orig_body="明日は学校へ行きます。", translated_body="明天去学校。")
         self.plugin._render_html_to_image = AsyncMock(side_effect=RuntimeError("stop before send"))
-        for enabled in (True, False):
-            self.plugin.config["push_format_config"] = {"enable_japanese_furigana": enabled}
+        for enabled, style in ((True, "平假名"), (True, "罗马音"), (False, "罗马音")):
+            self.plugin.config["push_format_config"] = {
+                "enable_japanese_furigana": enabled, "japanese_furigana_style": style,
+            }
             with self.assertRaisesRegex(RuntimeError, "stop before send"):
                 await Plugin.push_tweet_to_umo(self.plugin, tweet, self.rule["target_umo"])
             payload = self.plugin._render_html_to_image.await_args.args[1]
             self.assertEqual("orig_body_ruby" in payload, enabled)
             self.assertEqual(payload["translated_body"], tweet["translated_body"])
+            if enabled:
+                reading = "gakkou" if style == "罗马音" else "がっこう"
+                self.assertIn(f"<rt>{reading}</rt>", payload["orig_body_ruby"])
 
 
 if __name__ == "__main__":

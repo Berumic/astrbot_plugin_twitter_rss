@@ -60,7 +60,7 @@ FALLBACK_SOURCE_TEMPLATES = [
 
 CONFIG_SECTIONS = {
     "global_push_config": ("全局推送配置", ["default_push_image", "default_push_text", "skip_replies", "skip_retweets", "skip_quote_retweets", "default_push_retweet", "default_push_reply"]),
-    "push_format_config": ("推送样式与链接", ["enable_japanese_furigana", "include_external_links", "push_send_mode", "enable_merge_forward_over_3", "merge_forward_image_threshold", "merge_forward_uin"]),
+    "push_format_config": ("推送样式与链接", ["enable_japanese_furigana", "japanese_furigana_style", "include_external_links", "push_send_mode", "enable_merge_forward_over_3", "merge_forward_image_threshold", "merge_forward_uin"]),
     "ai_config": ("AI 模型与筛选", ["text_provider_id", "vision_provider_id", "image_tweet_bypass_text_filter"]),
     "fetch_config": ("抓取与并发配置", ["poll_interval_minutes", "fetch_concurrency", "processing_concurrency", "request_interval_seconds", "first_run_mark_seen", "test_push_tweet_count"]),
     "source_config": ("订阅源与网络配置", ["rss_base_url", "enable_multi_source_fallback", "hashtag_search_url", "hashtag_search_fallback_urls", "http_proxy"]),
@@ -1304,8 +1304,13 @@ class TwitterRssPlugin(Star):
                 original_schema = copy.deepcopy(s_dict)
                 changed_flag = False
                 s_dict["enable_japanese_furigana"] = {
-                    "description": "日语原文汉字假名注音", "type": "bool", "default": True,
-                    "hint": "在日语原文与引用推文的汉字上方显示小号平假名，正文和话题标签均支持。不修改中文翻译；本地词典不调用 AI，专名及多音字读音可能不准确。纯汉字且无假名的内容不自动注音。",
+                    "description": "日语原文汉字注音", "type": "bool", "default": True,
+                    "hint": "在日语原文与引用推文的汉字上方显示小号平假名或罗马音，正文和话题标签均支持。不修改中文翻译；本地词典不调用 AI，专名及多音字读音可能不准确。纯汉字且无假名的内容不自动注音。",
+                }
+                s_dict["japanese_furigana_style"] = {
+                    "description": "日语原文注音样式", "type": "string", "default": "平假名",
+                    "options": ["平假名", "罗马音"],
+                    "hint": "开启日语原文汉字注音后生效：在汉字上方显示平假名或赫本式罗马音。正文、话题标签和引用推文使用同一样式。",
                 }
                 s_dict["include_external_links"] = {
                     "description": "推送时附带站外链接", "type": "bool", "default": True,
@@ -3938,9 +3943,12 @@ class TwitterRssPlugin(Star):
         )
         if self._get_setting("enable_japanese_furigana", True):
             try:
-                render_payload = await asyncio.to_thread(annotate_original, render_payload)
+                render_payload = await asyncio.to_thread(
+                    annotate_original, render_payload,
+                    self._get_setting("japanese_furigana_style", "平假名"),
+                )
             except Exception as exc:
-                logger.warning(f"[TwitterRSS] 日语假名注音失败，保留原文渲染: {exc}")
+                logger.warning(f"[TwitterRSS] 日语注音失败，保留原文渲染: {exc}")
         rendered_card_path = await self._render_html_to_image(TWEET_CARD_TMPL, render_payload)
         raw_images = enriched_tweet.get("local_images", [])
         external_links = self._tweet_external_links(enriched_tweet) if self._get_setting("include_external_links", True) else []

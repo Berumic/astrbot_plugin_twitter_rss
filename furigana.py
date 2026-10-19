@@ -19,7 +19,7 @@ def _converter():
     return kakasi()
 
 
-def _ruby_word(word, reading):
+def _ruby_word(word, reading, style="平假名"):
     if not _KANJI.search(word) or not reading or not re.fullmatch(r"[\u3041-\u3096ー]+", reading):
         return html.escape(word)
     # Leave kana prefixes/okurigana outside ruby where the dictionary aligns them.
@@ -32,13 +32,16 @@ def _ruby_word(word, reading):
     kana = reading[left:len(reading)-right if right else None]
     if not base or not kana or not _KANJI.search(base):
         return html.escape(word)
+    if style in ("罗马音", "romaji"):
+        with _LOCK:
+            kana = "".join(token["hepburn"] for token in _converter().convert(kana))
     return (html.escape(word[:left]) + "<ruby>" + html.escape(base)
             + "<rp>(</rp><rt>" + html.escape(kana) + "</rt><rp>)</rp></ruby>"
             + (html.escape(word[-right:]) if right else ""))
 
 
 @lru_cache(maxsize=512)
-def ruby_text(text, japanese=False):
+def ruby_text(text, japanese=False, style="平假名"):
     """Return trusted markup; raw text, URL contents and special styles are preserved."""
     if not japanese and not _KANA.search(text):
         return html.escape(text)
@@ -60,7 +63,7 @@ def ruby_text(text, japanese=False):
             if "".join(token["orig"] for token in tokens) != original:
                 parts.append(html.escape(original))
             else:
-                parts.extend(_ruby_word(token["orig"], token.get("hira", "")) for token in tokens)
+                parts.extend(_ruby_word(token["orig"], token.get("hira", ""), style) for token in tokens)
             offset = run.end()
         parts.append(html.escape(chunk[offset:]))
         if match:
@@ -69,7 +72,7 @@ def ruby_text(text, japanese=False):
     return "".join(parts)
 
 
-def annotate_original(payload):
+def annotate_original(payload, style="平假名"):
     """Annotate original body/tags independently for the tweet and quoted tweet."""
     result = copy.deepcopy(payload)
     for block in (result, result.get("quote_info")):
@@ -78,8 +81,8 @@ def annotate_original(payload):
         body = str(block.get("orig_body") or "")
         tags = block.get("orig_tags") or []
         japanese = bool(_KANA.search(_URL.sub("", body + " " + " ".join(tags))))
-        body_markup = ruby_text(body, japanese)
-        tags_markup = " ".join(ruby_text(tag, japanese) for tag in tags)
+        body_markup = ruby_text(body, japanese, style)
+        tags_markup = " ".join(ruby_text(tag, japanese, style) for tag in tags)
         if "<ruby>" in body_markup:
             block["orig_body_ruby"] = body_markup
         if "<ruby>" in tags_markup:
