@@ -58,10 +58,31 @@ FALLBACK_SOURCE_TEMPLATES = [
     "https://nitter.poast.org/{username}/rss",
 ]
 
+AI_PROMPT_DEFAULTS = {
+    "vision_system_prompt": (
+        '你是一个专业的图像标签识别与推文直译助手。请仔细观察图片并严格返回 JSON 对象，绝不要输出任何多余解释或分析。'
+    ),
+    "vision_filter_instructions": (
+        '请完成以下任务：\n'
+        '- 判断图片中命中了【必须包含标签】里的哪些标签，原样放入 matched_must_tags 数组。\n'
+        '- 判断图片中命中了【其他任意标签】里的哪些标签，原样放入 matched_any_tags 数组。\n'
+        '- 判断图片中命中了【禁止包含(排除)标签】里的哪些标签，原样放入 matched_exclude_tags 数组。\n'
+        '- 若【原推文正文】非空，请将其直接翻译为自然流畅的中文放入 translated_body（只输出纯翻译译文，严禁添加“疑似…”、“画师…”、“意思是…”等任何解释说明；若原推文正文为空字符串，则 translated_body 必须为空字符串 ""）。\n'
+        '- 【人名尽量不翻译】：翻译正文与标签时，遇到人名（包括画师名、歌手/唱见名、VTuber/虚拟主播名、创作者昵称、声优名、角色名，尤其是日文假名/英文名如 ちょこ、ななひら、桃寝ちのい、名取さな、somunia 等）请直接保留原文，严禁强行音译或意译成生硬的中文！\n'
+        '- 若【原推文标签列表】非空，请将每个标签翻译为中文标签放入 translated_tags 数组（每个元素以 # 开头，涉及人名/专有创作者名的标签保留原文；若原推文无标签，则可结合画面补充 1~3 个核心中文 #标签 放入 translated_tags）。'
+    ),
+    "text_system_prompt": (
+        '你是一个专业的推特资讯筛选与直译助手。请根据筛选标准评估推文是否值得推送，并提供正文与标签的直接中文翻译，严格返回 JSON 对象。'
+    ),
+    "text_filter_instructions": (
+        '【翻译注意】遇到人名（如画师、歌手、VTuber、创作者昵称、角色名，尤其是日文假名/英文名如 ちょこ、ななひら、桃寝ちのい、名取さな 等）请尽量保留原文不翻译，不要强行音译或意译成生硬的中文。'
+    ),
+}
+
 CONFIG_SECTIONS = {
     "global_push_config": ("全局推送配置", ["default_push_image", "default_push_text", "skip_replies", "skip_retweets", "skip_quote_retweets", "default_push_retweet", "default_push_reply"]),
     "push_format_config": ("推送样式与链接", ["enable_japanese_furigana", "japanese_furigana_style", "include_external_links", "push_send_mode", "enable_merge_forward_over_3", "merge_forward_image_threshold", "merge_forward_uin"]),
-    "ai_config": ("AI 模型与筛选", ["text_provider_id", "vision_provider_id", "image_tweet_bypass_text_filter"]),
+    "ai_config": ("AI 模型与筛选", ["text_provider_id", "vision_provider_id", "image_tweet_bypass_text_filter", "vision_system_prompt", "vision_filter_instructions", "text_system_prompt", "text_filter_instructions"]),
     "fetch_config": ("抓取与并发配置", ["poll_interval_minutes", "fetch_concurrency", "processing_concurrency", "request_interval_seconds", "first_run_mark_seen", "test_push_tweet_count"]),
     "source_config": ("订阅源与网络配置", ["rss_base_url", "enable_multi_source_fallback", "hashtag_search_url", "hashtag_search_fallback_urls", "http_proxy"]),
     "digest_config": ("每日简报配置", ["enable_daily_digest", "daily_digest_time", "daily_digest_max_items", "daily_digest_prompt"]),
@@ -1191,6 +1212,11 @@ class TwitterRssPlugin(Star):
 
         return dirty
 
+    def _get_ai_prompt(self, key: str) -> str:
+        """Use the built-in prompt when an editable prompt is empty."""
+        value = self._get_setting(key, AI_PROMPT_DEFAULTS[key])
+        return str(value) if value is not None and str(value).strip() else AI_PROMPT_DEFAULTS[key]
+
     def _get_setting(self, key: str, default: Any = None) -> Any:
         for section, (_, fields) in CONFIG_SECTIONS.items():
             if key in fields:
@@ -1303,6 +1329,28 @@ class TwitterRssPlugin(Star):
             def _apply_options_to_schema_dict(s_dict: dict[str, Any]) -> bool:
                 original_schema = copy.deepcopy(s_dict)
                 changed_flag = False
+                for key, (description, hint) in {
+                    "vision_system_prompt": (
+                        '图片筛选：系统提示词',
+                        '定义图片识别与翻译助手角色。留空使用默认值。',
+                    ),
+                    "vision_filter_instructions": (
+                        '图片筛选：任务提示词',
+                        '自定义图片标签识别与翻译要求。各群标签、推文内容、图片和 JSON 返回格式由插件自动附加，无需占位符；标签名称应原样返回。留空使用默认值。',
+                    ),
+                    "text_system_prompt": (
+                        '文本筛选：系统提示词',
+                        '定义推文价值判断与翻译助手角色。留空使用默认值。',
+                    ),
+                    "text_filter_instructions": (
+                        '文本筛选：任务提示词',
+                        '自定义文本评估与翻译要求。各群独立文本筛选标准、作者、正文、标签和 JSON 返回格式由插件自动附加，无需占位符。留空使用默认值。',
+                    ),
+                }.items():
+                    s_dict[key] = {
+                        "description": description, "type": "text",
+                        "default": AI_PROMPT_DEFAULTS[key], "hint": hint,
+                    }
                 s_dict["enable_japanese_furigana"] = {
                     "description": "日语原文汉字注音", "type": "bool", "default": True,
                     "hint": "在日语原文与引用推文的汉字上方显示小号平假名或罗马音，正文和话题标签均支持。不修改中文翻译；本地词典不调用 AI，专名及多音字读音可能不准确。纯汉字且无假名的内容不自动注音。",
@@ -3512,30 +3560,22 @@ class TwitterRssPlugin(Star):
         orig_tags = prepared_tweet.get("orig_tags", [])
         local_imgs = prepared_tweet.get("local_images", [])
 
-        system_prompt = (
-            "你是一个专业的图像标签识别与推文直译助手。请仔细观察图片并严格返回 JSON 对象，绝不要输出任何多余解释或分析。"
-        )
+        system_prompt = self._get_ai_prompt("vision_system_prompt")
         prompt = (
             f"1. 要求检查的【必须包含标签】列表: {json.dumps(must_tags, ensure_ascii=False)}\n"
             f"2. 要求检查的【其他任意标签】列表: {json.dumps(any_tags, ensure_ascii=False)}\n"
             f"3. 要求检查的【禁止包含(排除)标签】列表: {json.dumps(exclude_tags, ensure_ascii=False)}\n"
             f"4. 原推文正文 (不含标签): {json.dumps(orig_body, ensure_ascii=False)}\n"
             f"5. 原推文标签列表: {json.dumps(orig_tags, ensure_ascii=False)}\n\n"
-            "请完成以下任务：\n"
-            "- 判断图片中命中了【必须包含标签】里的哪些标签，原样放入 matched_must_tags 数组。\n"
-            "- 判断图片中命中了【其他任意标签】里的哪些标签，原样放入 matched_any_tags 数组。\n"
-            "- 判断图片中命中了【禁止包含(排除)标签】里的哪些标签，原样放入 matched_exclude_tags 数组。\n"
-            "- 若【原推文正文】非空，请将其直接翻译为自然流畅的中文放入 translated_body（只输出纯翻译译文，严禁添加“疑似…”、“画师…”、“意思是…”等任何解释说明；若原推文正文为空字符串，则 translated_body 必须为空字符串 \"\"）。\n"
-            "- 【人名尽量不翻译】：翻译正文与标签时，遇到人名（包括画师名、歌手/唱见名、VTuber/虚拟主播名、创作者昵称、声优名、角色名，尤其是日文假名/英文名如 ちょこ、ななひら、桃寝ちのい、名取さな、somunia 等）请直接保留原文，严禁强行音译或意译成生硬的中文！\n"
-            "- 若【原推文标签列表】非空，请将每个标签翻译为中文标签放入 translated_tags 数组（每个元素以 # 开头，涉及人名/专有创作者名的标签保留原文；若原推文无标签，则可结合画面补充 1~3 个核心中文 #标签 放入 translated_tags）。\n\n"
-            "请严格按以下 JSON 格式返回：\n"
-            "{\n"
+            f"{self._get_ai_prompt('vision_filter_instructions')}\n\n"
+            '请严格按以下 JSON 格式返回：\n'
+            '{\n'
             '  "matched_must_tags": [],\n'
             '  "matched_any_tags": [],\n'
             '  "matched_exclude_tags": [],\n'
             '  "translated_body": "",\n'
             '  "translated_tags": []\n'
-            "}"
+            '}'
         )
 
         try:
@@ -3602,23 +3642,21 @@ class TwitterRssPlugin(Star):
         orig_body = prepared_tweet.get("orig_body", "")
         orig_tags = prepared_tweet.get("orig_tags", [])
 
-        system_prompt = (
-            "你是一个专业的推特资讯筛选与直译助手。请根据筛选标准评估推文是否值得推送，并提供正文与标签的直接中文翻译，严格返回 JSON 对象。"
-        )
+        system_prompt = self._get_ai_prompt("text_system_prompt")
         prompt = (
             f"【本群筛选标准】\n{custom_criteria}\n\n"
             f"【待评估推文】\n"
             f"作者: {prepared_tweet['author_name']} (@{prepared_tweet['username']})\n"
             f"原推文正文 (不含标签): {json.dumps(orig_body, ensure_ascii=False)}\n"
             f"原推文标签列表: {json.dumps(orig_tags, ensure_ascii=False)}\n\n"
-            "【翻译注意】遇到人名（如画师、歌手、VTuber、创作者昵称、角色名，尤其是日文假名/英文名如 ちょこ、ななひら、桃寝ちのい、名取さな 等）请尽量保留原文不翻译，不要强行音译或意译成生硬的中文。\n\n"
-            "请严格返回如下 JSON 格式：\n"
-            "{\n"
+            f"{self._get_ai_prompt('text_filter_instructions')}\n\n"
+            '请严格返回如下 JSON 格式：\n'
+            '{\n'
             '  "worth_pushing": true,\n'
-            '  "translated_body": "若原推文正文非空，直接输出正文的纯中文译文（人名保留原文，严禁添加疑似/解释说明）；若原推文正文为空，必须输出空字符串 \"\"",\n'
+            '  "translated_body": "若原推文正文非空，直接输出正文的纯中文译文（人名保留原文，严禁添加疑似/解释说明）；若原推文正文为空，必须输出空字符串 """,\n'
             '  "translated_tags": ["#标签译文1(人名保留原文)", "#标签译文2"],\n'
             '  "reason": "简短原因"\n'
-            "}"
+            '}'
         )
 
         try:

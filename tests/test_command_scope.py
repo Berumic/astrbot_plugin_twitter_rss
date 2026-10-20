@@ -5,6 +5,7 @@ import base64
 import copy
 import datetime
 import logging
+import json
 import pathlib
 from pathlib import Path
 import random
@@ -31,6 +32,8 @@ def load_plugin_methods():
         "_digest_tick", "_set_account_unavailable", "tw_list",
         "_account_availability_suffix", "_ingest_account_switches_from_rules",
         "_account_switch_panels", "_format_override_summary", "_parse_switch_mode",
+        "_get_ai_prompt", "_evaluate_vision_for_group", "_evaluate_text_for_group",
+        "_normalize_translated_tags", "_extract_json_dict",
     }
     original = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "TwitterRssPlugin")
     methods = [n for n in original.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in wanted]
@@ -40,7 +43,9 @@ def load_plugin_methods():
     sections = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "CONFIG_SECTIONS" for t in n.targets))
     module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
                              ast.ClassDef(name="Plugin", bases=[], keywords=[], body=methods, decorator_list=[])], type_ignores=[])
-    namespace = dict(asyncio=asyncio, copy=copy, random=random, re=re, base64=base64, httpx=httpx,
+    prompt_defaults = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "AI_PROMPT_DEFAULTS" for t in n.targets))
+    namespace = dict(asyncio=asyncio, copy=copy, random=random, re=re, base64=base64, httpx=httpx, json=json,
+                     AI_PROMPT_DEFAULTS=ast.literal_eval(prompt_defaults.value),
                      annotate_original=annotate_original,
                      __file__=str(Path(__file__).resolve().parents[1] / "main.py"),
                      TWEET_CARD_TMPL="tweet-template",
