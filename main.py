@@ -80,7 +80,7 @@ AI_PROMPT_DEFAULTS = {
 }
 
 CONFIG_SECTIONS = {
-    "global_push_config": ("全局推送配置", ["default_push_image", "default_push_text", "skip_replies", "skip_retweets", "skip_quote_retweets", "default_push_retweet", "default_push_reply"]),
+    "global_push_config": ("全局推送配置", ["default_push_image", "default_push_text", "skip_replies", "skip_retweets", "skip_quote_retweets", "default_push_retweet", "default_push_reply", "send_original_images"]),
     "push_format_config": ("推送样式与链接", ["enable_japanese_furigana", "japanese_furigana_style", "include_external_links", "push_send_mode", "enable_merge_forward_over_3", "merge_forward_image_threshold", "merge_forward_uin"]),
     "ai_config": ("AI 模型与筛选", ["text_provider_id", "vision_provider_id", "image_tweet_bypass_text_filter", "vision_system_prompt", "vision_filter_instructions", "text_system_prompt", "text_filter_instructions"]),
     "fetch_config": ("抓取与并发配置", ["poll_interval_minutes", "fetch_concurrency", "processing_concurrency", "request_interval_seconds", "first_run_mark_seen", "test_push_tweet_count"]),
@@ -1439,6 +1439,13 @@ class TwitterRssPlugin(Star):
                                     reordered["twitter_hashtags"] = tag_field
                             tmpl_obj["items"] = reordered
                             changed_flag = True
+                        tmpl_obj["items"]["send_original_images"] = {
+                            "description": "本群：推送时发送附带图片原图",
+                            "type": "string",
+                            "options": ["默认（跟随全局）", "发送原图", "不发送原图"],
+                            "default": "默认（跟随全局）",
+                            "hint": "覆盖全局原图开关；默认跟随全局设置。",
+                        }
                         expected_name = (
                             "群聊独立订阅与标签配置"
                             if t_key == "group_rule"
@@ -3945,7 +3952,44 @@ class TwitterRssPlugin(Star):
             raise RuntimeError(f"平台未找到会话，消息未发送: {umo}")
         return True
 
-    async def push_tweet_to_umo(self, enriched_tweet: dict[str, Any], target_umo: str):
+    def _should_send_original_images(self, group_rule: dict[str, Any] | None = None) -> bool:
+        """Resolve group tri-state override against the global original-image switch."""
+        if isinstance(group_rule, dict):
+            value = group_rule.get("send_original_images")
+            if isinstance(value, bool):
+                return value
+            normalized = str(value or "").strip().lower()
+            if normalized in ("发送原图", "开启", "开", "是", "true", "on", "yes", "1"):
+                return True
+            if normalized in ("不发送原图", "关闭", "关", "否", "false", "off", "no", "0"):
+                return False
+        return bool(self._get_setting("send_original_images", True))
+
+    @staticmethod
+    def _extract_direct_tweet_url(event: AstrMessageEvent) -> str:
+        raw = getattr(event, "message_str", "")
+        if callable(raw):
+            try: raw = raw()
+            except Exception: raw = ""
+        text = str(raw or "").strip()
+        match = re.match(r"^tw\+\s*(https?://\S+)\s*$", text, flags=re.I)
+        return match.group(1).rstrip("。！？,.，") if match else ""
+
+    async def _build_tweet_from_status_url(self, url: str) -> dict[str, Any] | None:
+        match = _STATUS_URL_RE.search(url)
+        if not match: return None
+        username, status_id = match.group(1), match.group(2)
+        detail = await self._fetch_single_status_cached(username, status_id)
+        if not detail: return None
+        return {"id": status_id, "username": detail.get("username") or username,
+                "author_name": detail.get("author_name") or username,
+                "avatar_url": detail.get("avatar_url", ""), "title": str(detail.get("text") or "")[:60],
+                "text": detail.get("text", ""), "link": f"https://x.com/{username}/status/{status_id}",
+                "external_links": detail.get("external_links", []), "images": detail.get("images", []),
+                "video_urls": detail.get("video_urls", []), "has_video": bool(detail.get("has_video")),
+                "is_retweet": False, "is_quote": False, "is_reply": False}
+
+    async def push_tweet_to_umo(self, enriched_tweet: dict[str, Any], target_umo: str, group_rule: dict[str, Any] | None = None):
         """将通过筛选的推文渲染为无黑边推文卡片，并按【渲染推文图片 + 原图单独发送】推送到指定群聊"""
         umo = self._resolve_target_umo(target_umo)
         if not umo:
@@ -3988,7 +4032,7 @@ class TwitterRssPlugin(Star):
             except Exception as exc:
                 logger.warning(f"[TwitterRSS] 日语注音失败，保留原文渲染: {exc}")
         rendered_card_path = await self._render_html_to_image(TWEET_CARD_TMPL, render_payload)
-        raw_images = enriched_tweet.get("local_images", [])
+        raw_images = enriched_tweet.get("local_images", []) if self._should_send_original_images(group_rule or enriched_tweet.get("_group_rule")) else []
         external_links = self._tweet_external_links(enriched_tweet) if self._get_setting("include_external_links", True) else []
         link_components = [Comp.Plain("\n站外链接：\n" + "\n".join(external_links))] if external_links else []
         send_mode = str(self._get_setting("push_send_mode", "separate_messages") or "separate_messages")
@@ -4212,7 +4256,7 @@ class TwitterRssPlugin(Star):
                         async with process_slots:
                             worth, enriched = await self.evaluate_tweet_for_group(prepared, rule)
                             if worth:
-                                sent = await self.push_tweet_to_umo(enriched, umo)
+                                sent = await self.push_tweet_to_umo(enriched, umo, group_rule=rule)
                                 if sent is False:
                                     raise RuntimeError("推送失败")
                                 stats["pushed"] += 1
@@ -4361,7 +4405,7 @@ class TwitterRssPlugin(Star):
                         prepared = await self._prepare_tweet_media(copy.deepcopy(tweet))
                         worth, enriched = await self.evaluate_tweet_for_group(prepared, group_rule)
                         if worth:
-                            if await self.push_tweet_to_umo(enriched, umo) is False:
+                            if await self.push_tweet_to_umo(enriched, umo, group_rule=group_rule) is False:
                                 raise RuntimeError("推送失败")
                             stats["pushed"] += 1
                         else:
@@ -4671,6 +4715,34 @@ class TwitterRssPlugin(Star):
         """推特 RSS 分群独立订阅与标签过滤管理指令组"""
         pass
 
+    @filter.event_message_type(filter.EventMessageType.ALL)
+    async def tw_plus_link(self, event: AstrMessageEvent):
+        """解析 tw+X 链接，按当前群聊规则筛选、渲染并发送。"""
+        url = self._extract_direct_tweet_url(event)
+        if not url: return
+        rule = self._find_or_create_group_rule(event, create_if_missing=False)
+        if not rule:
+            yield event.plain_result("当前群聊未绑定订阅配置，请先使用 /tw sub。")
+            return
+        try:
+            tweet = await self._build_tweet_from_status_url(url)
+            if not tweet:
+                yield event.plain_result("⚠️ 无法解析该推文链接，请确认链接来自 X/Twitter 且推文可访问。")
+                return
+            prepared = await self._prepare_tweet_media(tweet)
+            worth, enriched = await self.evaluate_tweet_for_group(prepared, rule)
+            if not worth:
+                yield event.plain_result("ℹ️ 该推文未通过本群筛选规则，未发送。")
+                return
+            sent = await self.push_tweet_to_umo(enriched, event.unified_msg_origin, group_rule=rule)
+            if sent is False:
+                yield event.plain_result("⚠️ 推文解析成功，但发送失败，请检查群聊主动消息权限。")
+                return
+            yield event.plain_result("✅ 已按本群规则解析并发送该推文。")
+        except Exception as exc:
+            logger.error(f"[TwitterRSS] tw+链接处理失败 ({url}): {exc}")
+            yield event.plain_result("⚠️ 处理推文链接失败，请稍后重试。")
+
     @tw.command("sub")
     async def tw_sub(self, event: AstrMessageEvent, group_name: str = ""):
         """绑定/初始化当前群聊的独立订阅配置"""
@@ -4947,6 +5019,7 @@ class TwitterRssPlugin(Star):
             f"• 会话 ID: {rule.get('target_umo')}\n"
             f"• 本群订阅账号 ({len(accounts)}): {', '.join(formatted_accounts) if formatted_accounts else '暂无 (发送 /tw add <账号> 添加)'}\n"
             f"• 本群订阅标签 ({len(hashtags)}): {', '.join('#' + tag for tag in hashtags) if hashtags else '暂无 (发送 /tw tag_add <标签> 添加)'}\n"
+            f"• 本群附带图片原图: {'发送原图' if getattr(self, '_should_send_original_images', lambda r: bool(self._get_setting('send_original_images', True)))(rule) else '不发送原图'}（全局默认：{'发送原图' if self._get_setting('send_original_images', True) else '不发送原图'}）\n"
             f"• 全局默认推文类型开关: "
             f"转推={'推送' if g_defs['retweet'] else '跳过'} | "
             f"引用转推={'推送' if g_defs['quote_retweet'] else '跳过'} | "
@@ -5320,5 +5393,3 @@ class TwitterRssPlugin(Star):
                 f"• 清理本地缓存图片: {res['removed_files']} 个（释放空间 {res['freed_mb']} MB）\n"
                 f"💡 历史《今日要闻》日报归档与订阅配置已保留（如需连同历史日报归档一并清空，可发送 `/tw clear all` 或 `/tw clear archive`）。"
             )
-
-
