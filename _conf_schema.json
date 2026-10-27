@@ -4155,7 +4155,7 @@
         "description": "同源站订阅抓取间隔秒数（防高频限流）",
         "type": "float",
         "default": 1.5,
-        "hint": "同一源站两次订阅请求开始时间的最小间隔；不同站点可并发。FxTwitter、FixupX 和 FxTwitter API 共用限速。429 按 Retry-After 冷却并回退。"
+        "hint": "同一源站两次订阅请求开始时间的最小间隔；不同站点可并发。各回退源分别限速，连接超时只短暂冷却失败的站点；429 按 Retry-After 冷却并回退。"
       },
       "first_run_mark_seen": {
         "description": "首次添加账号时仅记录历史推文不刷屏推送",

@@ -17,6 +17,30 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.plugin._http_reinit_lock = asyncio.Lock()
         self.plugin.http_client = None
 
+    def test_feed_mirror_cooldowns_are_independent(self):
+        p = self.plugin
+        fx = "https://fxtwitter.com/user/feed.xml"
+        fix = "https://fixupx.com/user/feed.xml"
+        api = "https://api.fxtwitter.com/2/profile/user/statuses"
+        self.assertEqual(p._feed_host(fx), "fxtwitter.com")
+        self.assertEqual(p._feed_host(fix), "fixupx.com")
+        self.assertEqual(p._feed_host(api), "api.fxtwitter.com")
+        p._cool_down_feed(fx, 30, "connect timeout")
+        self.assertGreater(p._feed_hosts()["fxtwitter.com"]["cooldown"], 0)
+        self.assertNotIn("fixupx.com", p._feed_hosts())
+        self.assertNotIn("api.fxtwitter.com", p._feed_hosts())
+
+    async def test_connect_timeout_only_cools_the_failed_mirror(self):
+        p = self.plugin
+        p._http_get_with_recovery = AsyncMock(
+            side_effect=httpx.ConnectTimeout("connect failed")
+        )
+        with self.assertRaises(httpx.ConnectTimeout):
+            await p._fetch_feed_response("https://fxtwitter.com/user/feed.xml")
+        states = p._feed_hosts()
+        self.assertIn("fxtwitter.com", states)
+        self.assertNotIn("fixupx.com", states)
+
     async def test_render_error_text_retries_then_uses_valid_png(self):
         with tempfile.TemporaryDirectory() as folder:
             bad = Path(folder) / "bad.png"

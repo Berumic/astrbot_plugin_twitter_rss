@@ -704,8 +704,9 @@ class TwitterRssPlugin(Star):
 
     def _feed_host(self, url: str) -> str:
         host = (urlsplit(url).hostname or "").lower()
-        # These aliases share an upstream and should share a rate budget.
-        return "fxtwitter.com" if host in {"fxtwitter.com", "fixupx.com", "api.fxtwitter.com"} else host
+        # Keep mirrors independent.  A timeout on fxtwitter.com must not suppress
+        # fixupx.com or api.fxtwitter.com, otherwise fallback is defeated.
+        return host or "unknown"
 
     def _feed_hosts(self) -> dict[str, dict[str, Any]]:
         if not hasattr(self, "_feed_host_states"):
@@ -720,9 +721,13 @@ class TwitterRssPlugin(Star):
             return (state.get("cooldown", 0) > now, state.get("pending", 0), state.get("next", 0))
         return sorted(urls, key=priority)
 
-    def _cool_down_feed(self, url: str, seconds: float = 30) -> None:
+    def _cool_down_feed(self, url: str, seconds: float = 30, reason: str = "") -> None:
         state = self._feed_hosts().setdefault(self._feed_host(url), {})
-        state["cooldown"] = max(state.get("cooldown", 0), time.monotonic() + seconds)
+        now = time.monotonic()
+        state["cooldown"] = max(state.get("cooldown", 0), now + max(1.0, seconds))
+        state["failures"] = min(10, int(state.get("failures", 0) or 0) + 1)
+        if reason:
+            state["cooldown_reason"] = reason
 
     async def _fetch_feed_response(self, url: str) -> httpx.Response:
         """Serialize feed requests per upstream; other upstreams remain concurrent."""
@@ -732,7 +737,9 @@ class TwitterRssPlugin(Star):
         try:
             async with lock:
                 if state.get("cooldown", 0) > time.monotonic():
-                    raise RuntimeError("源站冷却中，尝试其他源")
+                    remain = max(1, int(state["cooldown"] - time.monotonic()))
+                    host = self._feed_host(url)
+                    raise RuntimeError(f"源站 {host} 冷却中（约 {remain} 秒），尝试其他源")
                 delay = state.get("next", 0) - time.monotonic()
                 if delay > 0:
                     await asyncio.sleep(delay)
@@ -743,8 +750,16 @@ class TwitterRssPlugin(Star):
                 except httpx.PoolTimeout:
                     # Local resource exhaustion is not evidence that this host failed.
                     raise
+                except httpx.ConnectTimeout:
+                    # A failed TCP connect can be caused by a transient route or
+                    # proxy issue.  Cool only this exact host briefly.
+                    self._cool_down_feed(url, 8, "connect timeout")
+                    raise
+                except httpx.ReadTimeout:
+                    self._cool_down_feed(url, 15, "read timeout")
+                    raise
                 except httpx.RequestError:
-                    self._cool_down_feed(url)
+                    self._cool_down_feed(url, 20, "request error")
                     raise
                 if resp.status_code == 429:
                     retry_after = resp.headers.get("Retry-After", "60")
@@ -755,9 +770,16 @@ class TwitterRssPlugin(Star):
                             seconds = email.utils.parsedate_to_datetime(retry_after).timestamp() - time.time()
                         except (ValueError, TypeError, OverflowError):
                             seconds = 60
-                    self._cool_down_feed(url, max(1, seconds))
-                elif resp.status_code == 403 or resp.status_code >= 500:
-                    self._cool_down_feed(url, 60)
+                    self._cool_down_feed(url, max(1, seconds), "HTTP 429")
+                elif resp.status_code == 403:
+                    self._cool_down_feed(url, 60, "HTTP 403")
+                elif resp.status_code >= 500:
+                    self._cool_down_feed(url, 30, f"HTTP {resp.status_code}")
+                elif 200 <= resp.status_code < 400:
+                    # A healthy response clears a previous transient cooldown.
+                    state["failures"] = 0
+                    state.pop("cooldown", None)
+                    state.pop("cooldown_reason", None)
                 return resp
         finally:
             state["pending"] -= 1
@@ -1798,7 +1820,7 @@ class TwitterRssPlugin(Star):
                 continue
             job = jobs.setdefault(umo, {"date": today, "scheduled_at": scheduled.isoformat(),
                                         "sent": False, "retry_at": 0})
-            if job.get("sent") or time.time() < job.get("retry_at", 0):
+            if job.get("sent") or job.get("terminal_error") or time.time() < job.get("retry_at", 0):
                 continue
             edition_time = datetime.datetime.fromisoformat(job["scheduled_at"])
             if datetime.datetime.now().date() != edition_time.date():
@@ -1825,8 +1847,13 @@ class TwitterRssPlugin(Star):
                 else:
                     logger.warning(f"[TwitterRSS] 群[{rule.get('group_name')}] 当日日报未送达，5 分钟后重试，跨日停止")
             except Exception as exc:
-                logger.warning(f"[TwitterRSS] 群[{rule.get('group_name')}] 当日日报补发失败，5 分钟后重试，跨日停止: {exc}")
-            if not job.get("sent"):
+                if self._is_non_retryable_delivery_error(exc):
+                    job["terminal_error"] = f"消息内容违规: {exc}"
+                    job["retry_at"] = 0
+                    logger.error(f"[TwitterRSS] 群[{rule.get('group_name')}] 当日日报因消息内容违规停止重试: {exc}")
+                else:
+                    logger.warning(f"[TwitterRSS] 群[{rule.get('group_name')}] 当日日报补发失败，5 分钟后重试，跨日停止: {exc}")
+            if not job.get("sent") and not job.get("terminal_error"):
                 job["retry_at"] = time.time() + 300
             await self._save_state()
 
@@ -3920,6 +3947,22 @@ class TwitterRssPlugin(Star):
                 await asyncio.sleep(2)
 
     @staticmethod
+    def _is_non_retryable_delivery_error(exc: BaseException) -> bool:
+        """识别平台内容审核拒绝；这类错误重试不会改变结果。"""
+        parts: list[str] = []
+        current: BaseException | None = exc
+        seen: set[int] = set()
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            parts.append(str(current))
+            current = current.__cause__ or current.__context__
+        text = " ".join(parts).casefold()
+        return any(marker in text for marker in (
+            "消息内容违规", "内容违规", "内容不合规", "内容审核不通过",
+            "message content violation", "content violation",
+        ))
+
+    @staticmethod
     def _make_image_comp(path_or_url: str) -> Comp.Image:
         if path_or_url.startswith(("http://", "https://")):
             return Comp.Image.fromURL(path_or_url)
@@ -3967,27 +4010,47 @@ class TwitterRssPlugin(Star):
 
     @staticmethod
     def _extract_direct_tweet_url(event: AstrMessageEvent) -> str:
-        raw = getattr(event, "message_str", "")
-        if callable(raw):
-            try: raw = raw()
-            except Exception: raw = ""
-        text = str(raw or "").strip()
-        match = re.match(r"^tw\+\s*(https?://\S+)\s*$", text, flags=re.I)
-        return match.group(1).rstrip("。！？,.，") if match else ""
+        """Extract a bare X/Twitter status URL passed to ``/tw``."""
+        candidates = []
+        for attr in ("message_str", "get_message_str"):
+            raw = getattr(event, attr, "")
+            if callable(raw):
+                try:
+                    raw = raw()
+                except Exception:
+                    raw = ""
+            if raw:
+                candidates.append(str(raw).strip())
+        for text in candidates:
+            match = re.match(r"^/?tw(?:\+)?\s+(https?://\S+)\s*$", text, flags=re.I)
+            if match:
+                return match.group(1).rstrip("。！？,.，")
+        return ""
 
     async def _build_tweet_from_status_url(self, url: str) -> dict[str, Any] | None:
         match = _STATUS_URL_RE.search(url)
-        if not match: return None
+        if not match:
+            return None
         username, status_id = match.group(1), match.group(2)
         detail = await self._fetch_single_status_cached(username, status_id)
-        if not detail: return None
-        return {"id": status_id, "username": detail.get("username") or username,
-                "author_name": detail.get("author_name") or username,
-                "avatar_url": detail.get("avatar_url", ""), "title": str(detail.get("text") or "")[:60],
-                "text": detail.get("text", ""), "link": f"https://x.com/{username}/status/{status_id}",
-                "external_links": detail.get("external_links", []), "images": detail.get("images", []),
-                "video_urls": detail.get("video_urls", []), "has_video": bool(detail.get("has_video")),
-                "is_retweet": False, "is_quote": False, "is_reply": False}
+        if not detail:
+            return None
+        return {
+            "id": status_id,
+            "username": detail.get("username") or username,
+            "author_name": detail.get("author_name") or username,
+            "avatar_url": detail.get("avatar_url", ""),
+            "title": str(detail.get("text") or "")[:60],
+            "text": detail.get("text", ""),
+            "link": f"https://x.com/{username}/status/{status_id}",
+            "external_links": detail.get("external_links", []),
+            "images": detail.get("images", []),
+            "video_urls": detail.get("video_urls", []),
+            "has_video": bool(detail.get("has_video")),
+            "is_retweet": False,
+            "is_quote": False,
+            "is_reply": False,
+        }
 
     async def push_tweet_to_umo(self, enriched_tweet: dict[str, Any], target_umo: str, group_rule: dict[str, Any] | None = None):
         """将通过筛选的推文渲染为无黑边推文卡片，并按【渲染推文图片 + 原图单独发送】推送到指定群聊"""
@@ -4148,6 +4211,8 @@ class TwitterRssPlugin(Star):
             )
         except Exception as e:
             logger.error(f"[TwitterRSS] 向群聊会话 {umo} 推送推文失败: {e}")
+            if self._is_non_retryable_delivery_error(e):
+                raise RuntimeError(f"消息内容违规，已停止该推文重试: {e}") from e
             return False
 
     async def check_all_accounts(
@@ -4267,7 +4332,21 @@ class TwitterRssPlugin(Star):
                         # Persist completed deliveries while other groups are still processing.
                         await self._save_state()
                     except Exception as exc:
-                        logger.error(f"[TwitterRSS] 群[{rule.get('group_name')}] 处理推文 {identity} 失败，将在下轮重试: {exc}")
+                        if self._is_non_retryable_delivery_error(exc):
+                            read_order[tweet["id"]] = None
+                            seen.add(identity)
+                            progress_map = self.state.get("delivery_progress")
+                            if isinstance(progress_map, dict):
+                                progress_map.pop(
+                                    f"{umo}::{tweet.get('id') or tweet.get('link') or ''}",
+                                    None,
+                                )
+                            logger.error(
+                                f"[TwitterRSS] 群[{rule.get('group_name')}] 推文 {identity} "
+                                f"因消息内容违规跳过，后续不再自动重试: {exc}"
+                            )
+                        else:
+                            logger.error(f"[TwitterRSS] 群[{rule.get('group_name')}] 处理推文 {identity} 失败，将在下轮重试: {exc}")
                 seen_map[state_key] = list(read_order)[-300:]
 
             async def consume(rule, umo, queue):
@@ -4716,8 +4795,8 @@ class TwitterRssPlugin(Star):
         pass
 
     @filter.event_message_type(filter.EventMessageType.ALL)
-    async def tw_plus_link(self, event: AstrMessageEvent):
-        """解析 tw+X 链接，按当前群聊规则筛选、渲染并发送。"""
+    async def tw_direct_link(self, event: AstrMessageEvent):
+        """解析 /tw 推文链接，按当前群聊规则筛选、渲染并发送。"""
         url = self._extract_direct_tweet_url(event)
         if not url: return
         rule = self._find_or_create_group_rule(event, create_if_missing=False)
@@ -4740,7 +4819,7 @@ class TwitterRssPlugin(Star):
                 return
             yield event.plain_result("✅ 已按本群规则解析并发送该推文。")
         except Exception as exc:
-            logger.error(f"[TwitterRSS] tw+链接处理失败 ({url}): {exc}")
+            logger.error(f"[TwitterRSS] /tw 链接处理失败 ({url}): {exc}")
             yield event.plain_result("⚠️ 处理推文链接失败，请稍后重试。")
 
     @tw.command("sub")

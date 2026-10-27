@@ -12,6 +12,7 @@ import random
 import re
 import time
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 import unittest
 import httpx
 from furigana import annotate_original
@@ -25,7 +26,8 @@ def load_plugin_methods():
         "_get_rule_accounts", "_get_rule_hashtags", "_tweet_identity", "_resolve_target_umo",
         "_record_event_umo", "_find_or_create_group_rule", "check_all_accounts",
         "test_push_for_group", "tw_test", "tw_check", "run_daily_digest", "_matches_rule_subscription",
-        "_render_font_css", "push_tweet_to_umo", "_send_to_umo",
+        "_render_font_css", "push_tweet_to_umo", "_send_to_umo", "_should_send_original_images", "_tweet_external_links", "_is_non_retryable_delivery_error",
+        "_extract_direct_tweet_url", "_build_tweet_from_status_url",
         "_validate_rendered_image_sync", "_render_html_to_image", "_http_get_with_recovery",
         "_init_http_client", "_normalize_proxy_url", "_fetch_feed_response", "_feed_host",
         "_feed_hosts", "_cool_down_feed",
@@ -54,7 +56,7 @@ def load_plugin_methods():
                      _clean_digest_text=lambda text, **kwargs: text,
                      _compute_harmonious_digest_theme=lambda items, theme: (theme, theme, theme),
                      MessageChain=lambda items: items,
-                     logger=logging.getLogger("scope-tests"), CONFIG_SECTIONS=ast.literal_eval(sections.value))
+                     logger=logging.getLogger("scope-tests"), CONFIG_SECTIONS=ast.literal_eval(sections.value), urlsplit=urlsplit)
     exec(compile(ast.fix_missing_locations(module), "main.py (extracted methods)", "exec"), namespace)
     return namespace["Plugin"]
 
@@ -146,6 +148,23 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def tweets(account):
         return [dict(id=f"{account}-{i}", username=account) for i in range(5)]
+
+    def test_direct_tweet_url_command_parsing(self):
+        make_event = lambda text: SimpleNamespace(message_str=text)
+        self.assertEqual(
+            Plugin._extract_direct_tweet_url(make_event("/tw https://x.com/shioc621/status/2083944524024553725")),
+            "https://x.com/shioc621/status/2083944524024553725",
+        )
+        self.assertEqual(
+            Plugin._extract_direct_tweet_url(make_event("tw+ https://twitter.com/a/status/123。")),
+            "https://twitter.com/a/status/123",
+        )
+        self.assertEqual(
+            Plugin._extract_direct_tweet_url(make_event("tw https://fxtwitter.com/a/status/123")),
+            "https://fxtwitter.com/a/status/123",
+        )
+        self.assertEqual(Plugin._extract_direct_tweet_url(make_event("/tw sub")), "")
+        self.assertEqual(Plugin._extract_direct_tweet_url(make_event("hello /tw https://x.com/a/status/123")), "")
 
     async def test_random_count_limits_sources_and_one_tweet_per_source(self):
         p = self.plugin
@@ -353,6 +372,22 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
             if enabled:
                 reading = "gakkou" if style == "罗马音" else "がっこう"
                 self.assertIn(f"<rt>{reading}</rt>", payload["orig_body_ruby"])
+
+    async def test_content_policy_failure_is_terminal_and_not_reported_for_retry(self):
+        p = self.plugin
+        self.assertTrue(Plugin._is_non_retryable_delivery_error(RuntimeError("消息内容违规")))
+        self.assertTrue(Plugin._is_non_retryable_delivery_error(RuntimeError("content violation")))
+        self.assertFalse(Plugin._is_non_retryable_delivery_error(RuntimeError("网络超时")))
+        p._render_html_to_image = AsyncMock(return_value="card.png")
+        p._make_image_comp = Mock(return_value="image")
+        p._tweet_external_links = Mock(return_value=[])
+        p._send_to_umo = AsyncMock(side_effect=RuntimeError("消息内容违规"))
+        with self.assertRaisesRegex(RuntimeError, "消息内容违规"):
+            await Plugin.push_tweet_to_umo(
+                p, {"id": "policy-1", "username": "alice", "orig_body": "test"},
+                self.rule["target_umo"],
+            )
+        p._send_to_umo.assert_awaited_once()
 
 
 if __name__ == "__main__":
