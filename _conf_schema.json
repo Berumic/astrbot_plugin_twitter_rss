@@ -4034,6 +4034,12 @@
         "default": true,
         "hint": "自动附带推文正文、RSS 超链接及引用推文中的站外 HTTP(S) 链接，以可点击文本发送并去重。排除 X/Twitter、自有媒体域名及常见推特镜像；短链优先使用订阅源提供的展开地址。"
       },
+      "direct_link_force_push": {
+        "description": "/tw 链接强制推送",
+        "type": "bool",
+        "default": true,
+        "hint": "开启时，发送 /tw <推文链接> 会跳过本群账号类型、视觉标签和文本价值筛选，处理翻译后直接渲染发送；关闭后按当前群聊规则审查。"
+      },
       "push_send_mode": {
         "description": "推文渲染图 + 原图单独发送模式",
         "type": "string",

@@ -28,6 +28,7 @@ def load_plugin_methods():
         "test_push_for_group", "tw_test", "tw_check", "run_daily_digest", "_matches_rule_subscription",
         "_render_font_css", "push_tweet_to_umo", "_send_to_umo", "_should_send_original_images", "_tweet_external_links", "_is_non_retryable_delivery_error",
         "_extract_direct_tweet_url", "_build_tweet_from_status_url",
+        "_migrate_group_read_state",
         "_validate_rendered_image_sync", "_render_html_to_image", "_http_get_with_recovery",
         "_init_http_client", "_normalize_proxy_url", "_fetch_feed_response", "_feed_host",
         "_feed_hosts", "_cool_down_feed",
@@ -220,6 +221,57 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(c.args[1] == self.rule["target_umo"] for c in p.push_tweet_to_umo.await_args_list))
         self.assertNotIn(self.other["target_umo"], str(p.state))
         self.assertIn("手动检查 群[A]", "\n".join(logs.output))
+
+    async def test_changed_group_target_keeps_seen_and_retries_unsent(self):
+        p = self.plugin
+        self.rule.update(__template_key="group_rule", twitter_accounts=["alice"], twitter_hashtags=[])
+        old = "old:GroupMessage:old"
+        old_key = f"{old}::alice"
+        p.state = {"seen_ids": {old_key: ["https://x.com/alice/status/100", "102"]},
+                   "initialized_keys": [old_key], "group_read_targets": {"group_rule": old}}
+        p._fetch_account_tweets = AsyncMock(return_value=[dict(id=str(i), username="alice") for i in [99, 100, 101, 102, 103]])
+        stats = await p.check_all_accounts(target_rule=self.rule)
+        self.assertEqual(stats["pushed"], 2)
+        self.assertEqual([c.args[0]["id"] for c in p.push_tweet_to_umo.await_args_list], ["101", "103"])
+        self.assertIn(old_key, p.state["seen_ids"])
+        self.assertEqual(p.state["group_read_targets"]["group_rule"], self.rule["target_umo"])
+
+    def test_legacy_target_recovery_uses_unique_inactive_subscription_match(self):
+        p = self.plugin
+        old = "old:GroupMessage:A"
+        p.state = {"seen_ids": {f"{old}::{account}": ["100"] for account in ["alice", "bob", "carol", "dave", "#art"]},
+                   "initialized_keys": [f"{old}::alice"]}
+        p._migrate_group_read_state(self.rule, self.rule["target_umo"])
+        self.assertEqual(p.state["seen_ids"][f"{self.rule['target_umo']}::alice"], ["100"])
+        self.assertIn(f"{self.rule['target_umo']}::alice", p.state["initialized_keys"])
+
+    def test_legacy_target_recovery_never_merges_other_active_or_ambiguous_groups(self):
+        p = self.plugin
+        self.rule.update(twitter_accounts=["alice"], twitter_hashtags=[])
+        self.other["twitter_accounts"] = ["alice"]
+        p.state = {"seen_ids": {f"{self.other['target_umo']}::alice": ["100"]}}
+        p._migrate_group_read_state(self.rule, self.rule["target_umo"])
+        self.assertNotIn(f"{self.rule['target_umo']}::alice", p.state["seen_ids"])
+        p.state = {"seen_ids": {f"old:GroupMessage:{n}::alice": ["100"] for n in [1, 2]}}
+        p._migrate_group_read_state(self.rule, self.rule["target_umo"])
+        self.assertNotIn(f"{self.rule['target_umo']}::alice", p.state["seen_ids"])
+
+    async def test_deeper_fallback_feed_does_not_replay_initial_history(self):
+        p = self.plugin
+        self.rule.update(twitter_accounts=["alice"], twitter_hashtags=[])
+        p._fetch_account_tweets = AsyncMock(return_value=[dict(id="200", username="alice")])
+        await p.check_all_accounts(target_rule=self.rule)
+        p.push_tweet_to_umo.assert_not_awaited()
+        p._fetch_account_tweets.return_value = [dict(id=str(i), username="alice") for i in [100, 150, 200, 201]]
+        stats = await p.check_all_accounts(target_rule=self.rule)
+        self.assertEqual(stats["pushed"], 1)
+        self.assertEqual(p.push_tweet_to_umo.await_args.args[0]["id"], "201")
+        p._fetch_account_tweets.return_value.append(dict(id="202", username="alice"))
+        p.push_tweet_to_umo.side_effect = [False, True]
+        await p.check_all_accounts(target_rule=self.rule)
+        stats = await p.check_all_accounts(target_rule=self.rule)
+        self.assertEqual(stats["pushed"], 1)
+        self.assertEqual(p.push_tweet_to_umo.await_args.args[0]["id"], "202")
 
     async def test_manual_check_cannot_fall_back_to_global(self):
         with self.assertRaises(ValueError):

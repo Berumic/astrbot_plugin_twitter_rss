@@ -81,7 +81,7 @@ AI_PROMPT_DEFAULTS = {
 
 CONFIG_SECTIONS = {
     "global_push_config": ("全局推送配置", ["default_push_image", "default_push_text", "skip_replies", "skip_retweets", "skip_quote_retweets", "default_push_retweet", "default_push_reply", "send_original_images"]),
-    "push_format_config": ("推送样式与链接", ["enable_japanese_furigana", "japanese_furigana_style", "include_external_links", "push_send_mode", "enable_merge_forward_over_3", "merge_forward_image_threshold", "merge_forward_uin"]),
+    "push_format_config": ("推送样式与链接", ["enable_japanese_furigana", "japanese_furigana_style", "include_external_links", "direct_link_force_push", "push_send_mode", "enable_merge_forward_over_3", "merge_forward_image_threshold", "merge_forward_uin"]),
     "ai_config": ("AI 模型与筛选", ["text_provider_id", "vision_provider_id", "image_tweet_bypass_text_filter", "vision_system_prompt", "vision_filter_instructions", "text_system_prompt", "text_filter_instructions"]),
     "fetch_config": ("抓取与并发配置", ["poll_interval_minutes", "fetch_concurrency", "processing_concurrency", "request_interval_seconds", "first_run_mark_seen", "test_push_tweet_count"]),
     "source_config": ("订阅源与网络配置", ["rss_base_url", "enable_multi_source_fallback", "hashtag_search_url", "hashtag_search_fallback_urls", "http_proxy"]),
@@ -1035,6 +1035,8 @@ class TwitterRssPlugin(Star):
         if scope_clean == "all":
             self.state["seen_ids"] = {}
             self.state["initialized_keys"] = []
+            self.state["initial_seen_floors"] = {}
+            self.state["group_read_targets"] = {}
             await self._save_state()
 
         return {
@@ -1385,6 +1387,10 @@ class TwitterRssPlugin(Star):
                 s_dict["include_external_links"] = {
                     "description": "推送时附带站外链接", "type": "bool", "default": True,
                     "hint": "自动附带推文正文、RSS 超链接及引用推文中的站外 HTTP(S) 链接，以可点击文本发送并去重。排除 X/Twitter、自有媒体域名及常见推特镜像；短链优先使用订阅源提供的展开地址。",
+                }
+                s_dict["direct_link_force_push"] = {
+                    "description": "/tw 链接强制推送", "type": "bool", "default": True,
+                    "hint": "开启时，发送 /tw <推文链接> 会跳过本群账号类型、视觉标签和文本价值筛选，处理翻译后直接渲染发送；关闭后按当前群聊规则审查。",
                 }
                 test_field = copy.deepcopy(s_dict.get("test_push_tweet_count") or s_dict.get("fetch_config", {}).get("items", {}).get("test_push_tweet_count", {}))
                 test_field.update({
@@ -4215,6 +4221,56 @@ class TwitterRssPlugin(Star):
                 raise RuntimeError(f"消息内容违规，已停止该推文重试: {e}") from e
             return False
 
+    def _migrate_group_read_state(self, rule: dict[str, Any], umo: str) -> None:
+        """Keep read history when a subscription configuration changes destination."""
+        seen_map = self.state.setdefault("seen_ids", {})
+        init_keys = self.state.setdefault("initialized_keys", [])
+        floors = self.state.setdefault("initial_seen_floors", {})
+        targets = self.state.setdefault("group_read_targets", {})
+        rule_key = str(rule.get("__template_key") or umo)
+        previous = targets.get(rule_key)
+        if previous is None:
+            # Older versions did not remember which session owned a rule. Only
+            # recover an unambiguous, strongly matching inactive destination.
+            active = {self._resolve_target_umo(r.get("target_umo", "")) for r in self._get_group_rules()}
+            subscriptions = {a.casefold() for a in self._get_rule_accounts(rule)}
+            subscriptions.update(f"#{t}".casefold() for t in self._get_rule_hashtags(rule))
+            by_target: dict[str, set[str]] = {}
+            for state_key in set(seen_map) | set(init_keys):
+                old_umo, separator, account = state_key.rpartition("::")
+                if separator and old_umo not in active and old_umo != umo and ":GroupMessage:" in old_umo:
+                    by_target.setdefault(old_umo, set()).add(account.casefold())
+            matches = []
+            for old_umo, accounts in by_target.items():
+                overlap = subscriptions & accounts
+                score = len(overlap) / len(subscriptions | accounts) if overlap else 0
+                if score >= 0.6:
+                    matches.append((score, old_umo))
+            matches.sort(reverse=True)
+            if matches and (len(matches) == 1 or matches[0][0] > matches[1][0]):
+                previous = matches[0][1]
+        if previous and previous != umo:
+            prefix = f"{previous}::"
+            moved = 0
+            for old_key in set(seen_map) | set(init_keys):
+                if not old_key.startswith(prefix):
+                    continue
+                new_key = f"{umo}::{old_key[len(prefix):].casefold()}"
+                ids = [self._tweet_identity(x) for x in seen_map.get(old_key, [])]
+                current = [self._tweet_identity(x) for x in seen_map.get(new_key, [])]
+                seen_map[new_key] = list(dict.fromkeys(ids + current))[-300:]
+                if old_key in init_keys:
+                    if new_key not in init_keys:
+                        init_keys.append(new_key)
+                    # Older entries outside the retained read history must not
+                    # be replayed. Use the oldest known ID, preserving newer
+                    # failed deliveries that still need retrying.
+                    floor = floors.get(old_key) or min((int(x) for x in ids if x.isdigit()), default=0)
+                    floors[new_key] = max(int(floors.get(new_key, 0)), int(floor))
+                moved += 1
+            logger.info(f"[TwitterRSS] 群[{rule.get('group_name')}] 会话变更，继承 {moved} 个订阅的已读记录: {previous} -> {umo}")
+        targets[rule_key] = umo
+
     async def check_all_accounts(
         self, manual: bool = False, target_rule: dict[str, Any] | None = None
     ) -> dict[str, int]:
@@ -4235,6 +4291,7 @@ class TwitterRssPlugin(Star):
             media_slots = asyncio.Semaphore(process_limit)
             seen_map = self.state.setdefault("seen_ids", {})
             init_keys = self.state.setdefault("initialized_keys", [])
+            initial_floors = self.state.setdefault("initial_seen_floors", {})
             first_run_mark_seen = bool(self._get_setting("first_run_mark_seen", True))
             history = {self._tweet_identity(t): t for t in self.history_tweets}
             prepared_tasks: dict[str, asyncio.Task] = {}
@@ -4267,7 +4324,7 @@ class TwitterRssPlugin(Star):
                             init_keys.remove(old_key)
                             if state_key not in init_keys:
                                 init_keys.append(state_key)
-                read_order = dict.fromkeys(seen_map.get(state_key, []))
+                read_order = dict.fromkeys(self._tweet_identity(x) for x in seen_map.get(state_key, []))
                 seen = group_seen[umo]
                 first = state_key not in init_keys
                 candidates = []
@@ -4280,10 +4337,14 @@ class TwitterRssPlugin(Star):
                             + ([prior["subscription_hashtag"]] if prior.get("subscription_hashtag") else [])
                             + [account[1:]]
                         ))
-                    if tweet["id"] in read_order:
+                    if identity in read_order:
+                        continue
+                    floor = int(initial_floors.get(state_key, 0))
+                    if floor and identity.isdigit() and int(identity) <= floor:
+                        read_order[identity] = None
                         continue
                     if identity in seen or self._should_skip_tweet(tweet, rule):
-                        read_order[tweet["id"]] = None
+                        read_order[identity] = None
                         continue
                     if prior is None:
                         prior = copy.deepcopy(tweet)
@@ -4298,8 +4359,16 @@ class TwitterRssPlugin(Star):
                 else:
                     mark_only = []
                 for tweet in mark_only:
-                    read_order[tweet["id"]] = None
+                    read_order[self._tweet_identity(tweet)] = None
                     seen.add(self._tweet_identity(tweet))
+                baseline_tweets = tweets if first_run_mark_seen and not manual else mark_only
+                if first and baseline_tweets:
+                    # RSS/JSON sources expose different history depths. Freeze
+                    # the initial baseline so a later deeper feed stays read.
+                    initial_floors[state_key] = max(
+                        (int(self._tweet_identity(t)) for t in baseline_tweets if self._tweet_identity(t).isdigit()),
+                        default=0,
+                    )
                 # Initialization applies to this subscription, not each process restart.
                 if first:
                     init_keys.append(state_key)
@@ -4307,7 +4376,7 @@ class TwitterRssPlugin(Star):
                 for tweet in candidates:
                     identity = self._tweet_identity(tweet)
                     if identity in seen:
-                        read_order[tweet["id"]] = None
+                        read_order[identity] = None
                         continue
                     stats["new"] += 1
                     try:
@@ -4326,14 +4395,14 @@ class TwitterRssPlugin(Star):
                                     raise RuntimeError("推送失败")
                                 stats["pushed"] += 1
                         history[identity]["ai_summary"] = enriched.get("translated_body", "")
-                        read_order[tweet["id"]] = None
+                        read_order[identity] = None
                         seen.add(identity)
                         seen_map[state_key] = list(read_order)[-300:]
                         # Persist completed deliveries while other groups are still processing.
                         await self._save_state()
                     except Exception as exc:
                         if self._is_non_retryable_delivery_error(exc):
-                            read_order[tweet["id"]] = None
+                            read_order[identity] = None
                             seen.add(identity)
                             progress_map = self.state.get("delivery_progress")
                             if isinstance(progress_map, dict):
@@ -4365,6 +4434,7 @@ class TwitterRssPlugin(Star):
                 umo = self._resolve_target_umo(rule.get("target_umo", ""))
                 if not umo:
                     continue
+                self._migrate_group_read_state(rule, umo)
                 queue = asyncio.Queue()
                 queues.append(queue)
                 group_locks.setdefault(umo, asyncio.Lock())
@@ -4391,6 +4461,7 @@ class TwitterRssPlugin(Star):
                 for queue in subscribers[key]:
                     queue.put_nowait((key, account, is_hashtag, tweets))
 
+            await self._save_state()
             producers = [asyncio.create_task(produce(key, *source)) for key, source in sources.items()]
             logger.info(f"[TwitterRSS] {operation} {scope} 开始：{len(sources)} 个唯一订阅，抓取并发 {fetch_limit}，处理并发 {process_limit}")
             try:
@@ -4809,15 +4880,30 @@ class TwitterRssPlugin(Star):
                 yield event.plain_result("⚠️ 无法解析该推文链接，请确认链接来自 X/Twitter 且推文可访问。")
                 return
             prepared = await self._prepare_tweet_media(tweet)
-            worth, enriched = await self.evaluate_tweet_for_group(prepared, rule)
-            if not worth:
-                yield event.plain_result("ℹ️ 该推文未通过本群筛选规则，未发送。")
-                return
+            force_push = bool(self._get_setting("direct_link_force_push", True))
+            if force_push:
+                enriched = dict(prepared)
+                translation = await self._translate_only_without_filter(enriched)
+                if translation.get("translated_body") and enriched.get("orig_body"):
+                    enriched["translated_body"] = translation["translated_body"]
+                if translation.get("translated_tags"):
+                    enriched["translated_tags"] = translation["translated_tags"]
+                logger.info(
+                    f"[TwitterRSS] /tw 链接 {enriched.get('id')} (@{enriched.get('username')}) "
+                    "启用强制推送，跳过当前群聊筛选规则"
+                )
+            else:
+                worth, enriched = await self.evaluate_tweet_for_group(prepared, rule)
+                if not worth:
+                    yield event.plain_result("ℹ️ 该推文未通过本群筛选规则，未发送。")
+                    return
             sent = await self.push_tweet_to_umo(enriched, event.unified_msg_origin, group_rule=rule)
             if sent is False:
                 yield event.plain_result("⚠️ 推文解析成功，但发送失败，请检查群聊主动消息权限。")
                 return
-            yield event.plain_result("✅ 已按本群规则解析并发送该推文。")
+            yield event.plain_result(
+                "✅ 已强制渲染并发送该推文。" if force_push else "✅ 已按本群规则解析并发送该推文。"
+            )
         except Exception as exc:
             logger.error(f"[TwitterRSS] /tw 链接处理失败 ({url}): {exc}")
             yield event.plain_result("⚠️ 处理推文链接失败，请稍后重试。")
