@@ -4179,6 +4179,12 @@
           "max": 20,
           "step": 1
         }
+      },
+      "max_video_download_mb": {
+        "description": "单个视频最大下载大小（MB）",
+        "type": "int",
+        "default": 256,
+        "hint": "推文视频超过此大小时保留视频封面但跳过完整视频下载，避免占满缓存和发送接口。"
       }
     }
   },

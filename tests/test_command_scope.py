@@ -4,9 +4,14 @@ import asyncio
 import base64
 import copy
 import datetime
+import hashlib
+import html
+import email.utils
+import xml.etree.ElementTree as ET
 import logging
 import json
 import pathlib
+import tempfile
 from pathlib import Path
 import random
 import re
@@ -28,6 +33,10 @@ def load_plugin_methods():
         "test_push_for_group", "tw_test", "tw_check", "run_daily_digest", "_matches_rule_subscription",
         "_render_font_css", "push_tweet_to_umo", "_send_to_umo", "_should_send_original_images", "_tweet_external_links", "_is_non_retryable_delivery_error",
         "_extract_direct_tweet_url", "_build_tweet_from_status_url",
+        "_parse_rss_xml", "_analyze_retweet_and_quote", "_clean_html_to_text",
+        "_extract_images_and_videos", "_parse_pub_date", "_extract_external_links",
+        "_prepare_tweet_media", "_extract_media_from_fx_dict",
+        "_download_video_cached",
         "_migrate_group_read_state",
         "_validate_rendered_image_sync", "_render_html_to_image", "_http_get_with_recovery",
         "_init_http_client", "_normalize_proxy_url", "_fetch_feed_response", "_feed_host",
@@ -47,7 +56,8 @@ def load_plugin_methods():
     module = ast.Module(body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
                              ast.ClassDef(name="Plugin", bases=[], keywords=[], body=methods, decorator_list=[])], type_ignores=[])
     prompt_defaults = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "AI_PROMPT_DEFAULTS" for t in n.targets))
-    namespace = dict(asyncio=asyncio, copy=copy, random=random, re=re, base64=base64, httpx=httpx, json=json,
+    status_pattern = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_STATUS_URL_RE" for t in n.targets))
+    namespace = dict(ET=ET, html=html, email=email, _STATUS_URL_RE=re.compile(ast.literal_eval(status_pattern.value.args[0]), re.I), asyncio=asyncio, copy=copy, random=random, re=re, base64=base64, hashlib=hashlib, httpx=httpx, json=json,
                      AI_PROMPT_DEFAULTS=ast.literal_eval(prompt_defaults.value),
                      annotate_original=annotate_original,
                      __file__=str(Path(__file__).resolve().parents[1] / "main.py"),
@@ -149,6 +159,35 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def tweets(account):
         return [dict(id=f"{account}-{i}", username=account) for i in range(5)]
+
+    async def test_video_download_stream_cache_and_failure_cleanup(self):
+        p = self.plugin
+        url = "https://video.twimg.com/demo.mp4"
+        body = b"\x00\x00\x00\x18ftypisom" + b"0" * 2048
+        with tempfile.TemporaryDirectory() as folder:
+            p.image_cache_dir = pathlib.Path(folder)
+            p._get_setting = Mock(side_effect=lambda key, default=None: default)
+            async def chunks():
+                yield body[:1024]
+                yield body[1024:]
+            response = Mock(status_code=200, headers={"content-length": str(len(body))})
+            response.aiter_bytes = lambda *args: chunks()
+            stream = AsyncMock()
+            stream.__aenter__.return_value = response
+            client = AsyncMock()
+            client.stream = Mock(return_value=stream)
+            manager = AsyncMock()
+            manager.__aenter__.return_value = client
+            with patch.object(httpx, "AsyncClient", return_value=manager):
+                path = await p._download_video_cached(url)
+                self.assertEqual(pathlib.Path(path).read_bytes(), body)
+                client.stream.reset_mock()
+                self.assertEqual(await p._download_video_cached(url), path)
+                client.stream.assert_not_called()
+                stream.__aenter__.side_effect = httpx.ReadTimeout("slow download")
+                with self.assertRaisesRegex(RuntimeError, "ReadTimeout"):
+                    await p._download_video_cached(url + "?another=1")
+                self.assertEqual(list(pathlib.Path(folder).glob("*.part")), [])
 
     def test_direct_tweet_url_command_parsing(self):
         make_event = lambda text: SimpleNamespace(message_str=text)
@@ -425,6 +464,27 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
                 reading = "gakkou" if style == "罗马音" else "がっこう"
                 self.assertIn(f"<rt>{reading}</rt>", payload["orig_body_ruby"])
 
+    async def test_image_originals_and_video_covers_follow_separate_delivery_rules(self):
+        p = self.plugin
+        p.config["push_format_config"] = {"enable_japanese_furigana": False, "enable_merge_forward_over_3": False}
+        p._render_html_to_image = AsyncMock(return_value="card.png")
+        p._make_image_comp = Mock(side_effect=lambda path: "image:" + path)
+        p._make_video_comp = Mock(side_effect=lambda path: "video:" + path)
+        p._tweet_external_links = Mock(return_value=[])
+        p._send_to_umo = AsyncMock(return_value=True)
+        cases = [
+            ({}, {}, [["image:card.png"], ["image:original.jpg"]]),
+            ({}, {"send_original_images": False}, [["image:card.png"]]),
+            ({"has_video": True, "local_videos": ["clip.mp4"]}, {}, [["image:card.png"], ["video:clip.mp4"]]),
+            ({"has_video": True, "video_urls": ["https://video.twimg.com/clip.mp4"]}, {}, [["image:card.png"]]),
+        ]
+        for fields, rule, expected in cases:
+            with self.subTest(fields=fields, rule=rule), patch("asyncio.sleep", new_callable=AsyncMock):
+                p._send_to_umo.reset_mock()
+                tweet = dict(id="media-1", username="alice", local_images=["original.jpg"], **fields)
+                await Plugin.push_tweet_to_umo(p, tweet, self.rule["target_umo"], group_rule=rule)
+                self.assertEqual([call.args[1] for call in p._send_to_umo.await_args_list], expected)
+
     async def test_content_policy_failure_is_terminal_and_not_reported_for_retry(self):
         p = self.plugin
         self.assertTrue(Plugin._is_non_retryable_delivery_error(RuntimeError("消息内容违规")))
@@ -444,3 +504,32 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuoteFallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_rss_quote_survives_unavailable_detail_api(self):
+        p = Plugin()
+        rss = """<rss><channel><item>
+        <title>My comment</title><link>https://x.com/alice/status/123</link>
+        <description><![CDATA[<p>My comment</p><blockquote><a href="https://x.com/bob/status/456">Original quoted text</a></blockquote>]]></description>
+        </item></channel></rss>"""
+        tweet = p._parse_rss_xml(rss, "alice")[0]
+        self.assertTrue(tweet["is_quote"])
+        self.assertEqual(tweet["text"], "My comment")
+        self.assertEqual(tweet["quote_data"]["text"], "Original quoted text")
+        p._fetch_user_profile_cached = AsyncMock(return_value={})
+        p._fetch_single_status_cached = AsyncMock(return_value={})
+        p._download_image_cached = AsyncMock(return_value=(None, None))
+        p._split_tweet_body_and_tags = lambda text: (text, [])
+        prepared = await p._prepare_tweet_media(tweet)
+        self.assertEqual(prepared["orig_body"], "My comment")
+        self.assertEqual(prepared["quote_info"]["orig_body"], "Original quoted text")
+        self.assertEqual(prepared["quote_info"]["username"], "bob")
+
+    async def test_missing_quote_content_remains_retryable(self):
+        p = Plugin()
+        p._fetch_user_profile_cached = AsyncMock(return_value={})
+        p._fetch_single_status_cached = AsyncMock(return_value={})
+        with self.assertRaises(RuntimeError):
+            await p._prepare_tweet_media(dict(username="alice", is_quote=True,
+                                              quote_username="bob", quote_status_id="456"))

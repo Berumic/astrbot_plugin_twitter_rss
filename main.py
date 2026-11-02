@@ -83,7 +83,7 @@ CONFIG_SECTIONS = {
     "global_push_config": ("全局推送配置", ["default_push_image", "default_push_text", "skip_replies", "skip_retweets", "skip_quote_retweets", "default_push_retweet", "default_push_reply", "send_original_images"]),
     "push_format_config": ("推送样式与链接", ["enable_japanese_furigana", "japanese_furigana_style", "include_external_links", "direct_link_force_push", "push_send_mode", "enable_merge_forward_over_3", "merge_forward_image_threshold", "merge_forward_uin"]),
     "ai_config": ("AI 模型与筛选", ["text_provider_id", "vision_provider_id", "image_tweet_bypass_text_filter", "vision_system_prompt", "vision_filter_instructions", "text_system_prompt", "text_filter_instructions"]),
-    "fetch_config": ("抓取与并发配置", ["poll_interval_minutes", "fetch_concurrency", "processing_concurrency", "request_interval_seconds", "first_run_mark_seen", "test_push_tweet_count"]),
+    "fetch_config": ("抓取与并发配置", ["poll_interval_minutes", "fetch_concurrency", "processing_concurrency", "request_interval_seconds", "max_video_download_mb", "first_run_mark_seen", "test_push_tweet_count"]),
     "source_config": ("订阅源与网络配置", ["rss_base_url", "enable_multi_source_fallback", "hashtag_search_url", "hashtag_search_fallback_urls", "http_proxy"]),
     "digest_config": ("每日简报配置", ["enable_daily_digest", "daily_digest_time", "daily_digest_max_items", "daily_digest_prompt"]),
 }
@@ -1415,6 +1415,10 @@ class TwitterRssPlugin(Star):
                         "description": "同源站订阅抓取间隔秒数（防高频限流）", "type": "float", "default": 1.5,
                         "hint": "同一源站两次订阅请求开始时间的最小间隔；不同站点可并发。FxTwitter、FixupX 和 FxTwitter API 共用限速。429 按 Retry-After 冷却并回退。",
                     },
+                    "max_video_download_mb": {
+                        "description": "同源站订阅抓取间隔秒数（防高频限流）", "type": "float", "default": 1.5,
+                        "hint": "同一源站两次订阅请求开始时间的最小间隔；不同站点可并发。FxTwitter、FixupX 和 FxTwitter API 共用限速。429 按 Retry-After 冷却并回退。",
+                    },
                 }
                 for field, definition in concurrency_fields.items():
                     if s_dict.get(field) != definition:
@@ -2234,6 +2238,12 @@ class TwitterRssPlugin(Star):
                         "video_urls": q_vids,
                         "has_video": q_has_vid,
                     }
+                    quote_obj = tw.get("quote") or tw.get("quoted_status")
+                    res.update(self._analyze_retweet_and_quote(
+                        q_text, "", f"https://x.com/{q_uname}/status/{status_id}",
+                        q_uname, q_uname, explicit_quote=quote_obj,
+                    ))
+                    res["text"] = res.pop("clean_text")
                     self._status_detail_cache[skey] = res
                     return res
         except Exception as e:
@@ -2307,7 +2317,7 @@ class TwitterRssPlugin(Star):
             rt_sid = link_sid
 
         # 检查正文是否仅由一条推文链接构成（即 FxTwitter 把纯转推/无配文引用解析成了裸链接！）
-        if not is_retweet and url_matches and not text_no_urls:
+        if not is_retweet and not explicit_quote and url_matches and not text_no_urls:
             first_u, first_sid = url_matches[0].group(1), url_matches[0].group(2)
             is_retweet = True
             rt_user = first_u
@@ -2619,8 +2629,26 @@ class TwitterRssPlugin(Star):
                 if u_href not in embedded_status_urls:
                     embedded_status_urls.append(u_href)
 
-            images, video_urls, has_video = self._extract_images_and_videos(el, raw_html)
-            clean_text = self._clean_html_to_text(raw_html)
+            # Preserve RSS quote content before stripping HTML. Detail APIs may be unavailable.
+            rss_quote = None
+            main_html = raw_html
+            for block in re.finditer(r"<blockquote\b[^>]*>(.*?)</blockquote\s*>", raw_html, flags=re.I | re.S):
+                quote_match = _STATUS_URL_RE.search(html.unescape(block.group(1)))
+                if quote_match and quote_match.group(2) != link.rsplit("/", 1)[-1]:
+                    q_user, q_sid = quote_match.group(1), quote_match.group(2)
+                    q_images, q_videos, _ = self._extract_images_and_videos(ET.Element("item"), block.group(1))
+                    rss_quote = {
+                        "id": q_sid,
+                        "author": {"screen_name": q_user, "name": q_user},
+                        "text": self._clean_html_to_text(block.group(1)),
+                        "media": {"photos": [{"url": u} for u in q_images],
+                                  "videos": [{"url": u} for u in q_videos]},
+                        "external_links": self._extract_external_links("", block.group(1)),
+                    }
+                    main_html = raw_html[:block.start()] + raw_html[block.end():]
+                    break
+            images, video_urls, has_video = self._extract_images_and_videos(el, main_html)
+            clean_text = self._clean_html_to_text(main_html)
             if not clean_text and title:
                 clean_text = self._clean_html_to_text(title)
 
@@ -2634,6 +2662,7 @@ class TwitterRssPlugin(Star):
                 link=link,
                 creator_handle=creator_raw,
                 subscribed_username=username_fallback,
+                explicit_quote=rss_quote,
             )
 
             ts, pub_str = self._parse_pub_date(pub_raw)
@@ -3017,6 +3046,61 @@ class TwitterRssPlugin(Star):
             logger.debug(f"[TwitterRSS] 视频流抽帧回退跳过 ({video_url}): {e}")
         return None, None
 
+    async def _download_video_cached(self, video_url: str) -> str | None:
+        """Stream complete video files; transient failures remain retryable."""
+        if not video_url:
+            return None
+        if not hasattr(self, "_video_download_slots"):
+            self._video_download_slots = asyncio.Semaphore(2)
+            self._video_download_locks = {}
+        url_hash = hashlib.md5(f"video::{video_url}".encode("utf-8")).hexdigest()
+        lock = self._video_download_locks.setdefault(url_hash, asyncio.Lock())
+        async with lock, self._video_download_slots:
+            out_path = self.image_cache_dir / f"{url_hash}.mp4"
+            max_bytes = max(1, int(self._get_setting("max_video_download_mb", 256) or 256)) * 1024 * 1024
+            if out_path.exists() and 1024 < out_path.stat().st_size <= max_bytes:
+                return str(out_path)
+            temporary = out_path.with_suffix(".part")
+            proxy = self._normalize_proxy_url(self._get_setting("http_proxy", ""))
+            try:
+                async with httpx.AsyncClient(proxy=proxy, follow_redirects=True,
+                                             timeout=httpx.Timeout(60, connect=15)) as client:
+                    async with asyncio.timeout(300):
+                        async with client.stream("GET", video_url, headers={
+                            "User-Agent": "Mozilla/5.0", "Referer": "https://x.com/",
+                            "Accept-Encoding": "identity",
+                        }) as response:
+                            response.raise_for_status()
+                            if response.status_code != 200:
+                                raise RuntimeError(f"视频响应不完整: HTTP {response.status_code}")
+                            expected = int(response.headers.get("content-length") or 0)
+                            if expected > max_bytes:
+                                logger.warning(f"[TwitterRSS] 视频超过下载上限 {max_bytes // (1024 * 1024)} MB，保留封面: {video_url}")
+                                return None
+                            size = 0
+                            with temporary.open("wb") as output:
+                                async for chunk in response.aiter_bytes(256 * 1024):
+                                    size += len(chunk)
+                                    if size > max_bytes:
+                                        logger.warning(f"[TwitterRSS] 视频超过下载上限，保留封面: {video_url}")
+                                        return None
+                                    await asyncio.to_thread(output.write, chunk)
+                            if size <= 1024 or (expected and size != expected):
+                                raise RuntimeError(f"视频下载不完整: {size}/{expected} bytes")
+                            with temporary.open("rb") as downloaded:
+                                header = downloaded.read(32)
+                            if b"ftyp" not in header:
+                                raise RuntimeError("视频响应不是有效 MP4 文件")
+                            temporary.replace(out_path)
+                            logger.info(f"[TwitterRSS] 完整视频下载成功: {size / (1024 * 1024):.1f} MB")
+                            return str(out_path)
+            except Exception as exc:
+                logger.warning(f"[TwitterRSS] 下载推文视频失败，将在下轮重试 ({video_url}): {type(exc).__name__}: {exc}")
+                raise RuntimeError(f"视频下载失败，保留待处理状态: {type(exc).__name__}: {exc}") from exc
+            finally:
+                temporary.unlink(missing_ok=True)
+
+
     async def _download_image_cached(self, url: str) -> tuple[str | None, str | None]:
         if not url:
             return None, None
@@ -3371,6 +3455,9 @@ class TwitterRssPlugin(Star):
                         prepared["text"] = rt_detail["text"]
                     if rt_detail.get("images"):
                         prepared["images"] = rt_detail["images"]
+                    if rt_detail.get("video_urls"):
+                        prepared["video_urls"] = rt_detail["video_urls"]
+                        prepared["has_video"] = True
             elif rt_user:
                 rt_prof = await self._fetch_user_profile_cached(rt_user)
                 prepared["username"] = rt_user
@@ -3407,6 +3494,8 @@ class TwitterRssPlugin(Star):
                     "images": q_imgs,
                     "external_links": self._tweet_external_links(qd),
                 }
+            if not q_detail:
+                raise RuntimeError(f"引用推文 {q_user}/{q_sid} 详情获取失败，保留到下一轮重试")
             if q_detail:
                 q_body, q_tags = self._split_tweet_body_and_tags(q_detail.get("text", ""))
                 q_avatar_src = ""
@@ -3433,8 +3522,8 @@ class TwitterRssPlugin(Star):
 
         # 5. 若推文包含视频 (has_video / video_urls)，或 RSS 仅给出了视频而缺少快照图片 URL：
         #    优先通过 api.fxtwitter.com 单帖详情接口拉取官方高清视频封面快照 (thumbnail_url)！
-        if not prepared.get("images") and (
-            prepared.get("has_video") or prepared.get("video_urls")
+        if (prepared.get("has_video") or prepared.get("video_urls")) and (
+            not prepared.get("images") or not prepared.get("video_urls")
         ):
             sid = ""
             m_link = _STATUS_URL_RE.search(str(prepared.get("link") or ""))
@@ -3445,6 +3534,9 @@ class TwitterRssPlugin(Star):
             target_u = str(prepared.get("username") or sub_username).strip().lstrip("@")
             if target_u and sid:
                 st_detail = await self._fetch_single_status_cached(target_u, sid)
+                if st_detail.get("video_urls"):
+                    prepared["video_urls"] = list(st_detail["video_urls"])
+                    prepared["has_video"] = True
                 if st_detail.get("images"):
                     prepared["images"] = list(st_detail["images"])
                     prepared["has_video"] = True
@@ -3453,6 +3545,7 @@ class TwitterRssPlugin(Star):
                     )
 
         local_image_paths: list[str] = []
+        local_video_paths: list[str] = []
         display_image_srcs: list[str] = []
         for img_url in prepared.get("images", []):
             if str(img_url).lower().endswith((".mp4", ".m3u8")) or "video.twimg.com" in str(img_url).lower():
@@ -3473,6 +3566,14 @@ class TwitterRssPlugin(Star):
                 if data_uri:
                     display_image_srcs.append(data_uri)
 
+        if prepared.get("has_video") and not prepared.get("video_urls"):
+            raise RuntimeError("视频推文缺少视频直链，保留待处理状态，下轮重试")
+        # 视频封面用于卡片与视觉筛选，完整视频单独缓存后以 Video 组件发送。
+        for video_url in prepared.get("video_urls", [])[:4]:
+            video_path = await self._download_video_cached(video_url)
+            if video_path and video_path not in local_video_paths:
+                local_video_paths.append(video_path)
+
         # 若引用推文自身带图而外层推文无图，也将引用推文的图片纳入原图发送与视觉评估列表
         if not local_image_paths and quote_info and q_detail.get("images"):
             for img_url in q_detail["images"]:
@@ -3484,6 +3585,7 @@ class TwitterRssPlugin(Star):
         prepared["orig_tags"] = orig_tags
         prepared["avatar_src"] = avatar_data_uri
         prepared["local_images"] = local_image_paths
+        prepared["local_videos"] = local_video_paths
         prepared["display_images"] = display_image_srcs
         prepared["quote_info"] = quote_info
         prepared["translated_body"] = ""
@@ -3974,6 +4076,13 @@ class TwitterRssPlugin(Star):
             return Comp.Image.fromURL(path_or_url)
         return Comp.Image.fromFileSystem(path_or_url)
 
+    @staticmethod
+    def _make_video_comp(path_or_url: str) -> Comp.Video:
+        if path_or_url.startswith(("http://", "https://")):
+            return Comp.Video.fromURL(path_or_url)
+        return Comp.Video.fromFileSystem(path_or_url)
+
+
     async def _send_to_umo(self, umo: str, message_chain: MessageChain) -> bool:
         """Send proactively and fail loudly when the platform declines the session."""
         # QQ Official requires a remembered scene before background proactive sends.
@@ -4028,7 +4137,7 @@ class TwitterRssPlugin(Star):
             if raw:
                 candidates.append(str(raw).strip())
         for text in candidates:
-            match = re.match(r"^/?tw(?:\+)?\s+(https?://\S+)\s*$", text, flags=re.I)
+            match = re.match(r"^/?tw(?:\+\s*|\s+)(https?://\S+)\s*$", text, flags=re.I)
             if match:
                 return match.group(1).rstrip("。！？,.，")
         return ""
@@ -4054,7 +4163,10 @@ class TwitterRssPlugin(Star):
             "video_urls": detail.get("video_urls", []),
             "has_video": bool(detail.get("has_video")),
             "is_retweet": False,
-            "is_quote": False,
+            "is_quote": bool(detail.get("is_quote")),
+            "quote_username": detail.get("quote_username", ""),
+            "quote_status_id": detail.get("quote_status_id", ""),
+            "quote_data": detail.get("quote_data"),
             "is_reply": False,
         }
 
@@ -4101,7 +4213,14 @@ class TwitterRssPlugin(Star):
             except Exception as exc:
                 logger.warning(f"[TwitterRSS] 日语注音失败，保留原文渲染: {exc}")
         rendered_card_path = await self._render_html_to_image(TWEET_CARD_TMPL, render_payload)
-        raw_images = enriched_tweet.get("local_images", []) if self._should_send_original_images(group_rule or enriched_tweet.get("_group_rule")) else []
+        raw_videos = enriched_tweet.get("local_videos", [])
+        # Video thumbnails stay in the card; image tweets retain original-image delivery.
+        has_video = bool(raw_videos or enriched_tweet.get("has_video") or enriched_tweet.get("video_urls"))
+        raw_images = (
+            enriched_tweet.get("local_images", [])
+            if not has_video and self._should_send_original_images(group_rule or enriched_tweet.get("_group_rule"))
+            else []
+        )
         external_links = self._tweet_external_links(enriched_tweet) if self._get_setting("include_external_links", True) else []
         link_components = [Comp.Plain("\n站外链接：\n" + "\n".join(external_links))] if external_links else []
         send_mode = str(self._get_setting("push_send_mode", "separate_messages") or "separate_messages")
@@ -4109,7 +4228,7 @@ class TwitterRssPlugin(Star):
         # 合并转发判断：当开启 enable_merge_forward_over_3 且（原图数 > 3 或 渲染卡+原图总数 > 3）时，使用合并转发
         enable_merge_forward = bool(self._get_setting("enable_merge_forward_over_3", True))
         merge_threshold = max(1, int(self._get_setting("merge_forward_image_threshold", 3) or 3))
-        total_img_count = 1 + len(raw_images)  # 1张渲染推文卡 + N张原图
+        total_img_count = 1 + len(raw_images) + len(raw_videos)
         use_merge_forward = enable_merge_forward and (
             len(raw_images) > merge_threshold or total_img_count > merge_threshold
         )
@@ -4117,11 +4236,12 @@ class TwitterRssPlugin(Star):
         # 分条发送时记录已经成功发送的部分，失败重试只补发未完成部分。
         progress_map = self.state.setdefault("delivery_progress", {})
         progress_key = f"{umo}::{enriched_tweet.get('id') or enriched_tweet.get('link') or ''}"
-        progress = progress_map.setdefault(progress_key, {"card": False, "images": []})
+        progress = progress_map.setdefault(progress_key, {"card": False, "images": [], "videos": []})
         if not isinstance(progress, dict):
-            progress = {"card": False, "images": []}
+            progress = {"card": False, "images": [], "videos": []}
             progress_map[progress_key] = progress
         sent_image_indexes = {int(i) for i in (progress.get("images") or []) if str(i).isdigit()}
+        sent_video_indexes = {int(i) for i in (progress.get("videos") or []) if str(i).isdigit()}
 
         async def finish_delivery():
             progress_map.pop(progress_key, None)
@@ -4160,6 +4280,13 @@ class TwitterRssPlugin(Star):
                                     content=[self._make_image_comp(raw_img)],
                                 )
                             )
+                        for raw_video in raw_videos:
+                            node_list.append(
+                                Comp.Node(
+                                    uin=int(bot_uin), name=sender_name,
+                                    content=[self._make_video_comp(raw_video)],
+                                )
+                            )
                         forward_comp = (
                             Comp.Nodes(node_list)
                             if hasattr(Comp, "Nodes")
@@ -4180,6 +4307,7 @@ class TwitterRssPlugin(Star):
 
                 # 若当前平台为 qq_official（腾讯官方接口不支持伪造合并转发节点）或合并转发异常，自动回退为单条消息链合并发送
                 chain_comps = [self._make_image_comp(rendered_card_path)]
+                chain_comps.extend(self._make_video_comp(v) for v in raw_videos)
                 for raw_img in raw_images:
                     chain_comps.append(self._make_image_comp(raw_img))
                 chain_comps.extend(link_components)
@@ -4189,6 +4317,7 @@ class TwitterRssPlugin(Star):
 
             if send_mode == "single_chain":
                 chain_comps = [self._make_image_comp(rendered_card_path)]
+                chain_comps.extend(self._make_video_comp(v) for v in raw_videos)
                 for raw_img in raw_images:
                     chain_comps.append(self._make_image_comp(raw_img))
                 chain_comps.extend(link_components)
@@ -4200,6 +4329,14 @@ class TwitterRssPlugin(Star):
                         umo, MessageChain([self._make_image_comp(rendered_card_path)] + link_components)
                     )
                     progress["card"] = True
+                    await self._save_state()
+                for video_index, raw_video in enumerate(raw_videos):
+                    if video_index in sent_video_indexes:
+                        continue
+                    await asyncio.sleep(0.6)
+                    await self._send_to_umo(umo, MessageChain([self._make_video_comp(raw_video)]))
+                    sent_video_indexes.add(video_index)
+                    progress["videos"] = sorted(sent_video_indexes)
                     await self._save_state()
                 for image_index, raw_img in enumerate(raw_images):
                     if image_index in sent_image_indexes:
@@ -4213,7 +4350,7 @@ class TwitterRssPlugin(Star):
                     await self._save_state()
                 await finish_delivery()
             logger.info(
-                f"[TwitterRSS] 已向群聊 {umo} 推送推文 @{enriched_tweet.get('username')} ({enriched_tweet.get('id')})，附带原图 {len(raw_images)} 张"
+                f"[TwitterRSS] 已向群聊 {umo} 推送推文 @{enriched_tweet.get('username')} ({enriched_tweet.get('id')})，附带视频 {len(raw_videos)} 个、原图 {len(raw_images)} 张"
             )
         except Exception as e:
             logger.error(f"[TwitterRSS] 向群聊会话 {umo} 推送推文失败: {e}")
@@ -4901,9 +5038,7 @@ class TwitterRssPlugin(Star):
             if sent is False:
                 yield event.plain_result("⚠️ 推文解析成功，但发送失败，请检查群聊主动消息权限。")
                 return
-            yield event.plain_result(
-                "✅ 已强制渲染并发送该推文。" if force_push else "✅ 已按本群规则解析并发送该推文。"
-            )
+            return
         except Exception as exc:
             logger.error(f"[TwitterRSS] /tw 链接处理失败 ({url}): {exc}")
             yield event.plain_result("⚠️ 处理推文链接失败，请稍后重试。")
