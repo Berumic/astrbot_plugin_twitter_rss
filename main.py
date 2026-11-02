@@ -1784,7 +1784,7 @@ class TwitterRssPlugin(Star):
             except Exception as exc:
                 if isinstance(exc, (ValueError, ET.ParseError)):
                     self._cool_down_feed(url)
-                logger.warning(f"[TwitterRSS] 标签 #{tag} 搜索源 {urlsplit(url).netloc} 失败: {type(exc).__name__}: {str(exc).strip() or repr(exc)}")
+                logger.debug(f"[TwitterRSS] 标签 #{tag} 搜索源 {urlsplit(url).netloc} 失败: {type(exc).__name__}: {str(exc).strip() or repr(exc)}")
         if not empty_feed_seen:
             logger.warning(f"[TwitterRSS] 标签 #{tag} 所有搜索源均失败（{len(urls)} 个候选）")
         return []
@@ -4629,7 +4629,10 @@ class TwitterRssPlugin(Star):
         async with self._lock:
             umo = self._resolve_target_umo(group_rule.get("target_umo", ""))
             if target_account.strip():
-                sources = [(target_account.strip().lstrip("@"), False)]
+                requested = target_account.strip()
+                is_hashtag = requested.startswith("#")
+                source_name = requested[1:].strip() if is_hashtag else requested.lstrip("@")
+                sources = [(f"#{source_name}" if is_hashtag else source_name, is_hashtag)]
             else:
                 sources = [(a, False) for a in self._get_rule_accounts(group_rule)]
                 sources += [(f"#{tag}", True) for tag in self._get_rule_hashtags(group_rule)]
@@ -5538,7 +5541,11 @@ class TwitterRssPlugin(Star):
         except (ValueError, TypeError):
             yield event.plain_result("⚠️ 条数必须为正整数。用法：`/tw test 3` 或 `/tw test <账号> 2`。")
             return
-        target_acct = target_acct.lstrip("@")
+        target_acct = target_acct.strip()
+        if target_acct.startswith("#"):
+            target_acct = "#" + target_acct[1:].strip()
+        else:
+            target_acct = target_acct.lstrip("@")
         rule = self._find_or_create_group_rule(event, create_if_missing=False)
         if rule is None:
             yield event.plain_result("当前群聊未绑定订阅配置，请先使用 `/tw sub` 绑定本群。")
@@ -5546,36 +5553,27 @@ class TwitterRssPlugin(Star):
         if not target_acct and not (self._get_rule_accounts(rule) or self._get_rule_hashtags(rule)):
             yield event.plain_result("当前群聊没有订阅账号或标签。请先添加订阅，或使用 `/tw test <账号> 2` 测试指定账号。")
             return
-        scope = f"从账号 @{target_acct} 随机抽取 {limit} 条推文" if target_acct else f"随机选择本群最多 {limit} 个订阅，每个订阅随机抽取 1 条推文"
-        waiting_tip = ""
-        if self._lock.locked():
-            waiting_tip = (
-                "⏳ 后台扫描或其他推文任务正在运行，本次测试已排队，尚未开始抓取。"
-                "当前抓取日志属于正在运行的任务，不代表本次测试范围；"
-                "轮到本次测试时只抓取下面指定的订阅范围。\n"
-            )
-            logger.info(
-                f"[TwitterRSS] 随机测试 群[{rule.get('group_name')}] 已排队："
-                f"等待当前任务完成；本次将{scope}"
-            )
-        yield event.plain_result(
-            f"{waiting_tip}🧪 测试范围：{scope}，按本群【{rule.get('group_name')}】规则筛选后推送，请稍候..."
-        )
         stats = await self.test_push_for_group(group_rule=rule, limit=limit, target_account=target_acct)
         if stats["fetched"] == 0:
             unavailable = stats.get("unavailable_accounts", [])
-            tip = f"以下账号疑似不存在或暂不可用，已保留订阅并在 /tw list 中标注：{'、'.join(unavailable)}。" if unavailable else "请检查订阅源与网络配置。"
-            yield event.plain_result(f"⚠️ 未获取到推文。{tip}")
+            reason = (
+                f"订阅不可用：{'、'.join(unavailable)}"
+                if unavailable
+                else "未获取到推文，请检查订阅源或网络配置"
+            )
+            yield event.plain_result(f"❌测试失败：{reason}")
             return
-        shortage = f"\n• 本次仅抽取 {stats['sampled']} 条：订阅不足，或选中的订阅无可用推文；未扩大测试范围" if stats["sampled"] < limit else ""
-        yield event.plain_result(
-            f"✅ 本群【{rule.get('group_name')}】随机测试完成！\n"
-            f"• 检查订阅数: {stats['subscriptions']} 个\n"
-            f"• 随机抽取并评估: {stats['evaluated']} 条（合计最多 {limit} 条）\n"
-            f"• 通过规则并推送: {stats['pushed']} 条\n"
-            f"• 被筛选拦截: {stats['filtered']} 条\n"
-            f"• 处理失败: {stats['failed']} 条{shortage}"
-        )
+        if stats.get("failed", 0):
+            yield event.plain_result(f"❌测试失败：{stats['failed']} 条推文处理失败")
+            return
+        if stats.get("pushed", 0) == 0:
+            if stats.get("sampled", 0) == 0:
+                reason = "没有符合本群推送类型规则的推文"
+            else:
+                reason = "推文均未通过本群筛选规则"
+            yield event.plain_result(f"❌测试失败：{reason}")
+            return
+        yield event.plain_result("✅测试成功")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @tw.command("digest")
