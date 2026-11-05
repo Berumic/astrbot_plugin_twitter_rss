@@ -21,6 +21,7 @@ import random
 import re
 import shutil
 import time
+import unicodedata
 import xml.etree.ElementTree as ET
 from typing import Any
 from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
@@ -1689,13 +1690,36 @@ class TwitterRssPlugin(Star):
         match = re.search(r"/status(?:es)?/(\d+)", raw) or re.search(r"/status(?:es)?/(\d+)", link)
         return match.group(1) if match else raw
 
+    @staticmethod
+    def _tweet_contains_hashtag(tweet: dict[str, Any], tag: str) -> bool:
+        """Return true only when the tweet visibly contains the exact hashtag token."""
+        normalized_tag = unicodedata.normalize("NFKC", str(tag or "")).strip().lstrip("#＃").casefold()
+        if not normalized_tag:
+            return False
+        text_parts = [
+            tweet.get("text", ""),
+            tweet.get("title", ""),
+            tweet.get("orig_body", ""),
+            " ".join(tweet.get("orig_tags", []) or []),
+        ]
+        haystack = unicodedata.normalize("NFKC", "\n".join(str(part or "") for part in text_parts)).casefold()
+        # Hashtag subscriptions require the # marker and an exact token. This
+        # rejects keyword-only matches such as #桃源郷屋さん matching 桃源郷よすぎる.
+        pattern = rf"(?<![\w#])\#{re.escape(normalized_tag)}(?![\w])"
+        return re.search(pattern, haystack, flags=re.UNICODE) is not None
+
     def _matches_rule_subscription(self, tweet: dict[str, Any], rule: dict[str, Any]) -> bool:
         accounts = {account.casefold() for account in self._get_rule_accounts(rule)}
         tags = {tag.casefold() for tag in self._get_rule_hashtags(rule)}
         matched_tags = {str(tag).casefold() for tag in tweet.get("subscription_hashtags", [])}
         if tweet.get("subscription_hashtag"):
             matched_tags.add(str(tweet["subscription_hashtag"]).casefold())
-        return str(tweet.get("username", "")).casefold() in accounts or bool(tags & matched_tags)
+        if str(tweet.get("username", "")).casefold() in accounts:
+            return True
+        return any(
+            tag in matched_tags and self._tweet_contains_hashtag(tweet, tag)
+            for tag in tags
+        )
 
     def _build_hashtag_search_url(self, tag: str, template: str | None = None) -> str:
         template = str((self._get_setting("hashtag_search_url", "") if template is None else template) or "").strip()
@@ -1759,10 +1783,17 @@ class TwitterRssPlugin(Star):
             ET.SubElement(channel, "title").text = creator
             channel.append(item)
             parsed = self._parse_rss_xml(ET.tostring(rss, encoding="unicode"), username)
+            matched = []
             for tweet in parsed:
                 tweet["id"] = status_id
+                if not self._tweet_contains_hashtag(tweet, tag):
+                    logger.debug(
+                        f"[TwitterRSS] 标签 #{tag} 搜索结果未包含完整标签，已跳过 @{username}/{status_id}"
+                    )
+                    continue
                 tweet["subscription_hashtag"] = tag
-            tweets.extend(parsed)
+                matched.append(tweet)
+            tweets.extend(matched)
         if root.findall("./channel/item") and not tweets:
             raise ValueError("搜索结果没有可识别的推文链接，无法确认作者")
         return sorted(tweets, key=lambda tweet: tweet["timestamp"])

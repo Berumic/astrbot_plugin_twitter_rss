@@ -16,6 +16,7 @@ from pathlib import Path
 import random
 import re
 import time
+import unicodedata
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 import unittest
@@ -28,12 +29,12 @@ def load_plugin_methods():
     tree = ast.parse((Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8-sig"))
     wanted = {
         "_get_setting", "_get_group_rules", "_clean_str_list", "_extract_clean_handle",
-        "_get_rule_accounts", "_get_rule_hashtags", "_tweet_identity", "_resolve_target_umo",
+        "_get_rule_accounts", "_get_rule_hashtags", "_tweet_identity", "_tweet_contains_hashtag", "_resolve_target_umo",
         "_record_event_umo", "_find_or_create_group_rule", "check_all_accounts",
         "test_push_for_group", "tw_test", "tw_check", "run_daily_digest", "_matches_rule_subscription",
         "_render_font_css", "push_tweet_to_umo", "_send_to_umo", "_should_send_original_images", "_tweet_external_links", "_is_non_retryable_delivery_error",
         "_extract_direct_tweet_url", "_build_tweet_from_status_url",
-        "_parse_rss_xml", "_analyze_retweet_and_quote", "_clean_html_to_text",
+        "_parse_rss_xml", "_parse_hashtag_feed", "_analyze_retweet_and_quote", "_clean_html_to_text",
         "_extract_images_and_videos", "_parse_pub_date", "_extract_external_links",
         "_prepare_tweet_media", "_extract_media_from_fx_dict",
         "_download_video_cached",
@@ -57,7 +58,7 @@ def load_plugin_methods():
                              ast.ClassDef(name="Plugin", bases=[], keywords=[], body=methods, decorator_list=[])], type_ignores=[])
     prompt_defaults = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "AI_PROMPT_DEFAULTS" for t in n.targets))
     status_pattern = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_STATUS_URL_RE" for t in n.targets))
-    namespace = dict(ET=ET, html=html, email=email, _STATUS_URL_RE=re.compile(ast.literal_eval(status_pattern.value.args[0]), re.I), asyncio=asyncio, copy=copy, random=random, re=re, base64=base64, hashlib=hashlib, httpx=httpx, json=json,
+    namespace = dict(unicodedata=unicodedata, ET=ET, html=html, email=email, _STATUS_URL_RE=re.compile(ast.literal_eval(status_pattern.value.args[0]), re.I), asyncio=asyncio, copy=copy, random=random, re=re, base64=base64, hashlib=hashlib, httpx=httpx, json=json,
                      AI_PROMPT_DEFAULTS=ast.literal_eval(prompt_defaults.value),
                      annotate_original=annotate_original,
                      __file__=str(Path(__file__).resolve().parents[1] / "main.py"),
@@ -504,6 +505,19 @@ class CommandScopeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HashtagMatchingTests(unittest.TestCase):
+    def test_hashtag_requires_exact_hash_token(self):
+        self.assertTrue(Plugin._tweet_contains_hashtag({"text": "新作 #桃源郷屋さん"}, "桃源郷屋さん"))
+        self.assertFalse(Plugin._tweet_contains_hashtag({"text": "桃源郷よすぎるだろ"}, "桃源郷屋さん"))
+        self.assertFalse(Plugin._tweet_contains_hashtag({"text": "#桃源郷屋さん別"}, "桃源郷屋さん"))
+
+    def test_search_results_are_filtered_by_exact_hashtag(self):
+        rss = """<rss><channel><item><title>桃源郷よすぎる</title><link>https://nitter.test/no_1as2/status/1</link><description>桃源郷よすぎる</description></item><item><title>#桃源郷屋さん</title><link>https://nitter.test/alice/status/2</link><description>#桃源郷屋さん</description></item></channel></rss>"""
+        p = Plugin()
+        tweets = p._parse_hashtag_feed(rss, "桃源郷屋さん")
+        self.assertEqual([t["username"] for t in tweets], ["alice"])
 
 
 class QuoteFallbackTests(unittest.IsolatedAsyncioTestCase):
